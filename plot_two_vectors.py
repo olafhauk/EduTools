@@ -23,6 +23,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 #from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 class AppForm(QMainWindow):
@@ -58,8 +59,13 @@ class AppForm(QMainWindow):
         if (text=='Vectors'):
             self.display_option = 0
         elif (text=='Regression'):
+            if hasattr(self, 'functext'): # start afresh if necessary
+                delattr(self, 'functext')
             self.display_option = 1
         elif (text=='Correlation'):
+            if hasattr(self, 'functext'): # start afresh if necessary
+                delattr(self, 'functext')
+            self.create_main_frame()
             self.display_option = 2
         
         self.on_draw()
@@ -198,15 +204,22 @@ class AppForm(QMainWindow):
                     ymat = np.array(ylist)
                     corrmat = np.corrcoef(ymat)
                     print corrmat
-                    has_handle = 0 # check if handle and colorbar already exist
-                    if hasattr(self, 'h_matshow'):
-                        has_handle = 1
-                    self.h_matshow = self.axes2.matshow(corrmat, vmin=-1, vmax=1)
-                    # if (has_handle == 0):
-                    if (len(self.fig2.axes)==1): # no colorbar present
-                        cb = self.fig2.colorbar(self.h_matshow)
-                        cb.set_label(r"Correlation", size=8)
-                        cb.ax.tick_params(labelsize=6)
+                    
+                    nr, nc = corrmat.shape
+                    extent = [-0.5, nc-0.5, nr-0.5, -0.5]
+                    self.h_imshow = self.axes2.imshow(corrmat, extent=extent, origin='upper',
+                                                         interpolation='nearest', vmin=-1, vmax=1)
+                    self.axes2.set_xlim(extent[0], extent[1])
+                    self.axes2.set_ylim(extent[2], extent[3])
+                    self.axes2.xaxis.set_ticks(np.arange(0,nc,1))
+                    self.axes2.yaxis.set_ticks(np.arange(0,nr,1))
+
+                    # add colorbar
+                    divider2 = make_axes_locatable(self.axes2)
+                    cax2 = divider2.append_axes("right", size="20%", pad=0.05)
+                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)
+                    cb.set_label(r"Correlation", size=8)
+                    cb.ax.tick_params(labelsize=6)
 
                     # Fit Regression, explain first function by other functions
                     X = ymat[1:,:].T
@@ -218,8 +231,6 @@ class AppForm(QMainWindow):
 
                     legend.append('Pred')
                     self.axes.legend(legend, loc=2, prop={'size': 6})
-
-                    self.canvas2.draw()
 
         ## display CORRELATION
         elif self.display_option==2:
@@ -306,18 +317,31 @@ class AppForm(QMainWindow):
         # configuration tool in the navigation toolbar wouldn't
         # work.
         #
-        self.axes = self.fig.add_subplot(111)
-        self.axes.set_xlim([-1, 1])
-        self.axes.set_ylim([-1, 1])
-        self.axes.grid(True, 'major')
-        self.axes.tick_params(axis='both', which='major', labelsize=6)
+        if self.display_option==0 or self.display_option==2:
+            self.axes = self.fig.add_subplot(111)
+            self.axes.set_xlim([-1, 1])
+            self.axes.set_ylim([-1, 1])
+            self.axes.grid(True, 'major')
+            self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-        if self.display_option==1: # only for regression
-            self.fig2 = Figure((5.0, 4.0), dpi=self.dpi)
-            self.canvas2 = FigureCanvas(self.fig2)
-            self.canvas2.setParent(self.main_frame)
-            self.axes2 = self.fig2.add_subplot(111)
+        elif self.display_option==1: # only for regression
+            self.axes = self.fig.add_subplot(211)
+            self.axes.set_xlim([-1, 1])
+            self.axes.set_ylim([-1, 1])
+            self.axes.grid(True, 'major')
+            self.axes.tick_params(axis='both', which='major', labelsize=6)
+
+            self.axes2 = self.fig.add_subplot(212)
+            self.axes2.set_xlim([-1, 1])
+            self.axes2.set_ylim([-1, 1])
+            self.axes2.grid(True, 'major')
             self.axes2.tick_params(axis='both', which='major', labelsize=6)
+
+            # self.fig2 = Figure((5.0, 4.0), dpi=self.dpi)
+            # self.canvas2 = FigureCanvas(self.fig2)
+            # self.canvas2.setParent(self.main_frame)
+            # self.axes2 = self.fig2.add_subplot(111)
+            # self.axes2.tick_params(axis='both', which='major', labelsize=6)
         
         # # Bind the 'pick' event for clicking on one of the bars
         # #
@@ -392,8 +416,8 @@ class AppForm(QMainWindow):
         
         vbox = QVBoxLayout()
         vbox.addWidget(self.canvas)
-        if self.display_option==1: # only for regression
-            vbox.addWidget(self.canvas2)
+        # if self.display_option==1: # only for regression
+        #     vbox.addWidget(self.canvas2)
         vbox.addWidget(self.mpl_toolbar)
         vbox.addLayout(hbox)
         vbox.addLayout(hbox2)
