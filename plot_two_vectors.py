@@ -14,6 +14,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import numpy as np
+from numpy.random import * # for use in interactive displays
 
 import scipy.linalg
 
@@ -29,8 +30,8 @@ class AppForm(QMainWindow):
         QMainWindow.__init__(self, parent)
         self.setWindowTitle('Regression demo')
 
-        # 0: vectors, 1: regression
-        self.options = 0
+        # What do display: 0 -> vectors, 1 -> regression
+        self.display_option = 0
 
         # self.create_menu()
 
@@ -51,13 +52,16 @@ class AppForm(QMainWindow):
         #     print QCursor().pos()
         #     self.curs_pos()
 
-    def do_options(self):
-        # switch between regression and vector plotting
-        if (self.options == 0):
-            self.options = 1
-        else:
-            self.options = 0
-
+    def display_method(self, text):
+        # switch between display options (combobox)
+        print text
+        if (text=='Vectors'):
+            self.display_option = 0
+        elif (text=='Regression'):
+            self.display_option = 1
+        elif (text=='Correlation'):
+            self.display_option = 2
+        
         self.on_draw()
     
     # def on_about(self):
@@ -149,7 +153,8 @@ class AppForm(QMainWindow):
         x = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # x-axis for plots
         x = x * self.slider_scale.value()/10. # scale x-axis with slider value
 
-        if self.options==0: # if vector option chosen                
+        ## display VECTORS
+        if self.display_option==0:
 
             ## Vector Plot        
             X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]            
@@ -164,7 +169,8 @@ class AppForm(QMainWindow):
                     self.axes.set_ylim(self.x_lim[0]*scale_fac, self.x_lim[1]*scale_fac)
             self.X = X[0] # keep reference vector
 
-        elif self.options==1: # regression option chosen
+        ## display REGRESSION
+        elif self.display_option==1: # regression option chosen
             # textbox 2 (function execution)
             # textbox 1
             
@@ -214,7 +220,50 @@ class AppForm(QMainWindow):
                     self.axes.legend(legend, loc=2, prop={'size': 6})
 
                     self.canvas2.draw()
-        
+
+        ## display CORRELATION
+        elif self.display_option==2:
+            if len(text_lim)==0:
+                self.x_lim.append(-1.)
+            if len(text_lim)==1:
+                self.x_lim.append(1.)
+            if len(text_lim)==2:
+                self.x_lim.append(0.1)  
+
+            x = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # variable 1
+            y = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # variable 2
+
+            x = x * self.slider_scale.value()/10. # scale x-axis with slider value
+            y = y * self.slider_scale.value()/10. # scale x-axis with slider value
+
+            text_list = [] # text strings to evaluate as functions for scatter plots
+            if (hasattr(self, 'functext')):
+                for ff in self.functext:
+                    if len(ff.text())>0:
+                        text_list.append( '[' + unicode(ff.text()) + ']' )
+                    else:
+                        text_list.append('[x,y]')
+
+                legend = []
+                zlist = [] # list of results
+                for tt in text_list:
+                    if not(tt==[]):
+                        z = np.array( eval(tt) )
+                        zlist.append(y)                        
+                        self.axes.scatter(z[0,], z[1,], marker='x', s=10)
+                        corr = np.corrcoef(z[0,], z[1,])
+                        legend.append( "%s %.3f" % (tt, corr[0,1]) )
+
+                min_x, max_x = np.min(z[0,]), np.max(z[0,])
+                min_y, max_y = np.min(z[1,]), np.max(z[1,])
+                    
+                self.axes.set_xlim(min_x, max_x)
+                self.axes.set_ylim(min_y, max_y)
+
+                print corr
+
+                self.axes.legend(legend, loc=2, prop={'size': 6})
+    
         self.canvas.draw()
 
 
@@ -229,13 +278,11 @@ class AppForm(QMainWindow):
         n = len(self.functext)
 
         self.functext.append(QLineEdit()) # textbox for functions to be executed
-        self.functext[n].setMinimumWidth(200)
+        self.functext[n-1].setMinimumWidth(200)
         self.create_main_frame()
         self.on_draw()
-        self.connect(self.functext[n], SIGNAL('editingFinished ()'), self.on_draw)
+        self.connect(self.functext[n-1], SIGNAL('editingFinished ()'), self.on_draw)
         
-
-    
 
 
     def create_main_frame(self):
@@ -265,7 +312,7 @@ class AppForm(QMainWindow):
         self.axes.grid(True, 'major')
         self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-        if self.options==1: # only for regression
+        if self.display_option==1: # only for regression
             self.fig2 = Figure((5.0, 4.0), dpi=self.dpi)
             self.canvas2 = FigureCanvas(self.fig2)
             self.canvas2.setParent(self.main_frame)
@@ -297,10 +344,16 @@ class AppForm(QMainWindow):
         self.connect(self.draw_button, SIGNAL('clicked()'), self.on_draw)
 
         self.add_button = QPushButton("&Add") # add textbox for function plotting
-        self.connect(self.add_button, SIGNAL('clicked()'), self.on_add)
+        self.connect(self.add_button, SIGNAL('clicked()'), self.on_add)        
 
-        self.opt_button = QPushButton("&Options") # add textbox for switching vectors/regression
-        self.connect(self.opt_button, SIGNAL('clicked()'), self.do_options)
+        # Menu box for display options (vectors. regression, correlation)
+        if not(hasattr(self, 'comboBox')):
+            self.comboBox = QComboBox(self)
+            self.comboBox.addItem("Vectors")
+            self.comboBox.addItem("Regression")
+            self.comboBox.addItem("Correlation")
+
+            self.comboBox.activated[str].connect(self.display_method)
 
         ## Slider
         if not(hasattr(self, 'slider_scale')):
@@ -321,8 +374,8 @@ class AppForm(QMainWindow):
         
         # for w in [  self.textbox, self.draw_button, self.grid_cb,
         #             slider_label, self.slider]:
-        attr_list = [self.textbox_lim, self.draw_button, self.add_button, self.opt_button,
-                        self.slider_label, self.slider_scale]
+        attr_list = [self.textbox_lim, self.draw_button, self.add_button,
+                        self.slider_label, self.slider_scale, self.comboBox]
         # if hasattr(self, 'functext'):
         #     for ff in self.functext:
         #         attr_list.append(ff)
@@ -339,7 +392,7 @@ class AppForm(QMainWindow):
         
         vbox = QVBoxLayout()
         vbox.addWidget(self.canvas)
-        if self.options==1: # only for regression
+        if self.display_option==1: # only for regression
             vbox.addWidget(self.canvas2)
         vbox.addWidget(self.mpl_toolbar)
         vbox.addLayout(hbox)
