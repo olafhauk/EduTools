@@ -190,7 +190,7 @@ class AppForm(QMainWindow):
             if len(text_lim)==1:
                 self.x_lim.append(1.)
             if len(text_lim)==2:
-                self.x_lim.append(0.01)  
+                self.x_lim.append(0.01)
 
             if hasattr(self, 'functext'):
                 legend = []
@@ -202,12 +202,12 @@ class AppForm(QMainWindow):
                     S.append(ss.value()/1000.)
                 S = np.array(S)
 
-                for ff in self.functext:
+                for [fi,ff] in enumerate(self.functext):
                     txt_str = unicode(ff.text())
                     print txt_str
                     if (txt_str != ''):
                         y = np.array( eval(txt_str) )
-                        self.axes.plot(x,y)
+                        self.axes.plot(x,y,c=plot_colors[fi])
                         self.axes.set_xlim(x[0],x[-1])
                         ylist.append(y)
                         legend.append(txt_str)                
@@ -220,7 +220,8 @@ class AppForm(QMainWindow):
                     nr, nc = corrmat.shape
                     extent = [-0.5, nc-0.5, nr-0.5, -0.5]
                     self.h_imshow = self.axes2.imshow(corrmat, extent=extent, origin='upper',
-                                                         interpolation='nearest', vmin=-1, vmax=1)
+                                                         interpolation='nearest', vmin=-1, vmax=1)                    
+
                     self.axes2.set_xlim(extent[0], extent[1])
                     self.axes2.set_ylim(extent[2], extent[3])
                     self.axes2.xaxis.set_ticks(np.arange(0,nc,1))
@@ -229,8 +230,7 @@ class AppForm(QMainWindow):
                     # add colorbar
                     divider2 = make_axes_locatable(self.axes2)
                     cax2 = divider2.append_axes("right", size="20%", pad=0.05)
-                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)
-                    cb.set_label(r"Correlation", size=8)
+                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)                    
                     cb.ax.tick_params(labelsize=6)
 
                     # Fit Regression, explain first function by other functions
@@ -239,7 +239,14 @@ class AppForm(QMainWindow):
                     b = pinvX.dot(ymat[0,:].T)
                     ye = X.dot(b)
                     print ye.shape, b.shape, X.shape
-                    self.axes.plot(x,ye,linestyle='--')
+                    self.axes.plot(x,ye,c='k',linestyle='--')
+
+                    # plot parameter estimates
+                    nb = len(b)
+                    b_x = np.arange(0,nb) + .6 # start at 1, because 0 is predicted variable
+                    self.h_bar = self.axes3.bar(b_x,b,.8)
+                    self.axes3.set_xlim(0.3, b_x[-1]+1.2)
+                    self.axes3.xaxis.set_ticks(np.arange(1,nb+1,1))
 
                     legend.append('Pred')
                     self.axes.legend(legend, loc=2, prop={'size': 6})
@@ -295,6 +302,7 @@ class AppForm(QMainWindow):
 
                 self.axes.legend(legend, loc=2, prop={'size': 6})
     
+        self.fig.tight_layout()
         self.canvas.draw()
 
 
@@ -389,21 +397,15 @@ class AppForm(QMainWindow):
             self.axes.grid(True, 'major')
             self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-            self.axes2 = self.fig.add_subplot(212)
-            self.axes2.set_xlim([-1, 1])
-            self.axes2.set_ylim([-1, 1])
-            self.axes2.grid(True, 'major')
+            self.axes2 = self.fig.add_subplot(223)                        
+            # self.axes2.grid(True, 'major')
             self.axes2.tick_params(axis='both', which='major', labelsize=6)
+            self.axes2.set_title("Correlation", {'fontsize': 6})
 
-            # self.fig2 = Figure((5.0, 4.0), dpi=self.dpi)
-            # self.canvas2 = FigureCanvas(self.fig2)
-            # self.canvas2.setParent(self.main_frame)
-            # self.axes2 = self.fig2.add_subplot(111)
-            # self.axes2.tick_params(axis='both', which='major', labelsize=6)
-        
-        # # Bind the 'pick' event for clicking on one of the bars
-        # #
-        # self.canvas.mpl_connect('pick_event', self.on_pick)
+            self.axes3 = self.fig.add_subplot(224)
+            self.axes3.grid(True, 'major')
+            self.axes3.tick_params(axis='both', which='major', labelsize=6)
+            self.axes3.set_title("Estimates", {'fontsize': 6})
         
         # Create the navigation toolbar, tied to the canvas
         #
