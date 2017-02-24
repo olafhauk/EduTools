@@ -66,6 +66,18 @@ class AppForm(QMainWindow):
         
         self.create_main_frame()
         self.on_draw()
+
+
+    def covcorr(self, text):
+        # switch between correlation and covariance display
+        print text
+        if (text=='Disp Corr'):
+            self.display_covcorr = 0
+        elif (text=='Disp Cov'):
+            self.display_covcorr = 1        
+        
+        self.create_main_frame()
+        self.on_draw()
     
     # def on_about(self):
     #     msg = """ A demo of using PyQt with matplotlib:
@@ -126,20 +138,7 @@ class AppForm(QMainWindow):
         #
         self.axes.clear()
         self.axes.grid(True)
-        # self.axes.grid(self.grid_cb.isChecked())
-
-        # not sure what this is
-        # print self.mpl_toolbar.x()
-        ## this seems to be cursor position in canvas?
-        # print self.cursor().pos()
-        
-        # self.axes.bar(
-        #     left=x, 
-        #     height=self.data, 
-        #     # width=self.slider.value() / 100.0, 
-        #     align='center', 
-        #     alpha=0.44,
-        #     picker=5)
+        # self.axes.grid(self.grid_cb.isChecked())       
 
         str_txt = unicode(self.textbox_lim.text())
         # self.data = map(int, str.split())
@@ -214,18 +213,29 @@ class AppForm(QMainWindow):
                 
                 if len(ylist)>1:
                     ymat = np.array(ylist)
-                    corrmat = np.corrcoef(ymat)
+                    corrmat = np.corrcoef(ymat) # correlation matrix
                     print corrmat
+                    print ymat.shape
+                    covmat = np.cov(ymat) # covariance matrix
+
+                    # correlation or covariance to display
+                    if self.display_covcorr==0:
+                        disp_mat = corrmat
+                        axes2_title = 'Correlation'
+                    else:
+                        disp_mat = covmat
+                        axes2_title = 'Covariance'
                     
                     nr, nc = corrmat.shape
                     extent = [-0.5, nc-0.5, nr-0.5, -0.5]
-                    self.h_imshow = self.axes2.imshow(corrmat, extent=extent, origin='upper',
+                    self.h_imshow = self.axes2.imshow(disp_mat, extent=extent, origin='upper',
                                                          interpolation='nearest', vmin=-1, vmax=1)                    
 
                     self.axes2.set_xlim(extent[0], extent[1])
                     self.axes2.set_ylim(extent[2], extent[3])
                     self.axes2.xaxis.set_ticks(np.arange(0,nc,1))
                     self.axes2.yaxis.set_ticks(np.arange(0,nr,1))
+                    self.axes2.set_title(axes2_title, {'fontsize': 6})
 
                     # add colorbar
                     divider2 = make_axes_locatable(self.axes2)
@@ -242,6 +252,7 @@ class AppForm(QMainWindow):
                     self.axes.plot(x,ye,c='k',linestyle='--')
 
                     # plot parameter estimates
+                    print b
                     nb = len(b)
                     b_x = np.arange(0,nb) + .6 # start at 1, because 0 is predicted variable
                     self.h_bar = self.axes3.bar(b_x,b,.8)
@@ -307,10 +318,10 @@ class AppForm(QMainWindow):
 
 
 
-    def on_add(self):
+    def on_add_func(self):
         """ Add text box (for function plotting) to figure
         """
-        print "Adding"
+        print "Adding function"
 
         if self.display_option==1: # Regression
         
@@ -320,45 +331,60 @@ class AppForm(QMainWindow):
 
             n = len(self.functext)
 
+            disp_text = str(n) + ":" # text for label
+
             self.functext.append(QLineEdit()) # textbox for functions to be executed
             self.functext[n].setMinimumWidth(200)
             self.connect(self.functext[n], SIGNAL('editingFinished ()'), self.on_draw)
-
-            disp_text = str(n) + ":"
             
             self.funclabels.append(QLabel(disp_text))
 
-            # noise sliders
-            if not(hasattr(self, 'funcsliders')):
-                self.funcsliders = []
-                self.fslidelabels = []
-            
-            self.funcsliders.append(QSlider(Qt.Horizontal))
-            self.funcsliders[n].setRange(0, 1000)
-            self.funcsliders[n].setValue(0)
-            self.funcsliders[n].setTracking(True)
-            self.funcsliders[n].setTickPosition(QSlider.TicksBelow)
-            self.funcsliders[n].setTickInterval(50)
-            self.connect(self.funcsliders[n], SIGNAL('valueChanged(int)'), self.on_draw)
-
-            self.fslidelabels.append(QLabel(disp_text))
-
-            self.create_main_frame()
-            self.on_draw()
-        
         elif self.display_option == 2: # Correlation
             
             if not(hasattr(self, 'corrtext')):
                     self.corrtext = [] # initialise list
+                    self.corrlabels = []
 
             n = len(self.corrtext)
 
+            disp_text = str(n) + ":" # text for label
+
             self.corrtext.append(QLineEdit()) # textbox for functions to be executed
-            self.corrtext[n].setMinimumWidth(200)
-            self.create_main_frame()
-            self.on_draw()
+            self.corrtext[n].setMinimumWidth(200)            
             self.connect(self.corrtext[n], SIGNAL('editingFinished ()'), self.on_draw)
 
+            self.corrlabels.append(QLabel(disp_text))
+
+        self.create_main_frame()
+
+
+    def on_add_slider(self):
+        """ Add sliders (for function plotting) to figure
+        """
+
+        print "Adding slider"
+
+        # noise sliders
+        if not(hasattr(self, 'funcsliders')):
+            self.funcsliders = []
+            self.fslidelabels = []
+        
+        n = len(self.funcsliders)
+
+        disp_text = str(n) + ":" # text for label
+
+        self.funcsliders.append(QSlider(Qt.Horizontal))
+        self.funcsliders[n].setRange(0, 1000)
+        self.funcsliders[n].setValue(0)
+        self.funcsliders[n].setTracking(True)
+        self.funcsliders[n].setTickPosition(QSlider.TicksBelow)
+        self.funcsliders[n].setTickInterval(50)
+        self.connect(self.funcsliders[n], SIGNAL('valueChanged(int)'), self.on_draw)
+
+        self.fslidelabels.append(QLabel(disp_text))
+
+        self.create_main_frame()
+        self.on_draw()
 
 
     def create_main_frame(self):
@@ -385,8 +411,8 @@ class AppForm(QMainWindow):
         #
         if self.display_option==0 or self.display_option==2:
             self.axes = self.fig.add_subplot(111)
-            self.axes.set_xlim([-1, 1])
-            self.axes.set_ylim([-1, 1])
+            self.axes.set_xlim([-1., 1.])
+            self.axes.set_ylim([-1., 1.])
             self.axes.grid(True, 'major')
             self.axes.tick_params(axis='both', which='major', labelsize=6)            
 
@@ -399,8 +425,7 @@ class AppForm(QMainWindow):
 
             self.axes2 = self.fig.add_subplot(223)                        
             # self.axes2.grid(True, 'major')
-            self.axes2.tick_params(axis='both', which='major', labelsize=6)
-            self.axes2.set_title("Correlation", {'fontsize': 6})
+            self.axes2.tick_params(axis='both', which='major', labelsize=6)            
 
             self.axes3 = self.fig.add_subplot(224)
             self.axes3.grid(True, 'major')
@@ -427,8 +452,11 @@ class AppForm(QMainWindow):
         self.draw_button = QPushButton("&Draw")
         self.connect(self.draw_button, SIGNAL('clicked()'), self.on_draw)
 
-        self.add_button = QPushButton("&Add") # add textbox for function plotting
-        self.connect(self.add_button, SIGNAL('clicked()'), self.on_add)        
+        self.add_func_button = QPushButton("&+Func") # add textbox for function plotting
+        self.connect(self.add_func_button, SIGNAL('clicked()'), self.on_add_func)
+
+        self.add_slider_button = QPushButton("&+Slider") # add slider for function plotting
+        self.connect(self.add_slider_button, SIGNAL('clicked()'), self.on_add_slider)
 
         # Menu box for display options (vectors. regression, correlation)
         if not(hasattr(self, 'comboBox')):
@@ -438,6 +466,15 @@ class AppForm(QMainWindow):
             self.comboBox.addItem("Correlation")
 
             self.comboBox.activated[str].connect(self.display_method)
+
+        # menu for correlation/covariance
+        if not(hasattr(self, 'corrBox')):
+            self.corrBox = QComboBox(self)
+            self.corrBox.addItem("Disp Corr")
+            self.corrBox.addItem("Disp Cov")
+            self.display_covcorr = 0 # Default: Correlation
+
+            self.corrBox.activated[str].connect(self.covcorr)
 
         ## Slider
         if not(hasattr(self, 'slider_scale')):
@@ -458,8 +495,9 @@ class AppForm(QMainWindow):
         hbox3 = QHBoxLayout()  # sliders for noise in regression
         hbox4 = QHBoxLayout()  # text boxes for correlation        
                
-        attr_list = [self.textbox_lim, self.draw_button, self.add_button,
-                        self.slider_label, self.slider_scale, self.comboBox]        
+        attr_list = [self.textbox_lim, self.draw_button, self.add_func_button,
+                    self.add_slider_button, self.slider_label, self.slider_scale,
+                    self.corrBox, self.comboBox]
 
         # HBOX1 for Draw/Add buttons etc.
         for w in attr_list:
@@ -467,11 +505,11 @@ class AppForm(QMainWindow):
             hbox1.setAlignment(w, Qt.AlignVCenter)
 
         ## initialise or add TEXT BOXES
-        keep_dispopt = self.display_option
         
         # REGRESSION text and slider boxes
-        self.display_option==1        
         if not(hasattr(self, 'functext')):
+            self.funclabel = QLabel('Regr:') # for box with regression functions
+
             self.funclabels = []
             self.funclabels.append(QLabel('0:'))
 
@@ -480,11 +518,13 @@ class AppForm(QMainWindow):
             self.functext[0].setMinimumWidth(200)
             self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)
 
-            # noise sliders
+            
+        if not(hasattr(self, 'funcsliders')):
+            # regression sliders
             self.fslidelabels = []
             self.fslidelabels.append(QLabel('0:'))
 
-            self.funcsliders = []            
+            self.funcsliders = []
             self.funcsliders.append(QSlider(Qt.Horizontal))
             self.funcsliders[0].setRange(0, 1000)
             self.funcsliders[0].setMinimumWidth(200)
@@ -494,7 +534,8 @@ class AppForm(QMainWindow):
             self.funcsliders[0].setTickInterval(50)
             self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
 
-
+        # add function text boxes to box
+        hbox2.addWidget(self.funclabel)
         for aa in range(len(self.functext)):
             w = self.funclabels[aa]
             hbox2.addWidget(w)
@@ -502,8 +543,9 @@ class AppForm(QMainWindow):
             w = self.functext[aa]
             hbox2.addWidget(w)
             hbox2.setAlignment(w, Qt.AlignVCenter)
-            
-            # noise sliders
+        
+        # add function sliders to box
+        for aa in range(len(self.fslidelabels)):
             w = self.fslidelabels[aa]
             hbox3.addWidget(w)
 
@@ -512,19 +554,28 @@ class AppForm(QMainWindow):
             hbox3.setAlignment(w, Qt.AlignVCenter)
 
 
-        # CORRELATION text box
-        self.display_option==2
+        # CORRELATION text box        
         if not(hasattr(self, 'corrtext')):
+            self.corrlabel = QLabel('Corr:') # for box with regression functions
+
+            self.corrlabels = []
+            self.corrlabels.append(QLabel('0:'))
+
             self.corrtext = []
             self.corrtext.append(QLineEdit()) # textbox for functions to be executed
             self.corrtext[0].setMinimumWidth(200)            
-            self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)
-        else:
-            for w in self.corrtext:
-                hbox4.addWidget(w)
-                hbox4.setAlignment(w, Qt.AlignVCenter)
+            self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)        
+        
+        # add correlation text boxes to box
+        hbox4.addWidget(self.corrlabel)
+        for aa in range(len(self.corrtext)):
+            w = self.corrlabels[aa]
+            hbox4.addWidget(w)
 
-        self.display_option = keep_dispopt
+            w = self.corrtext[aa]
+            hbox4.addWidget(w)
+            hbox4.setAlignment(w, Qt.AlignVCenter)
+
                 
         vbox = QVBoxLayout()
         vbox.addWidget(self.canvas)
