@@ -146,7 +146,8 @@ class AppForm(QMainWindow):
         text_lim = map(float, str_txt.split())
         self.x_lim = text_lim
 
-        x = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # x-axis for plots
+        # symmetrical x-range
+        x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
         x = x * self.slider_scale.value()/10. # scale x-axis with slider value
         n = len(x) # for use in interactive displays
 
@@ -156,7 +157,7 @@ class AppForm(QMainWindow):
             ## Vector Plot
             if self.data_mouse==[]:
                 self.data_mouse = [0,0,0.9,0]
-            X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]            
+            X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]
             scale_fac = self.slider_scale.value() / 10.
             X[0] = X[0] * scale_fac # rescale; mouse coordinates are already scaled
             colours = ['k', 'r'] # arrow colours            
@@ -191,9 +192,16 @@ class AppForm(QMainWindow):
             if len(text_lim)==2:
                 self.x_lim.append(0.01)  
 
-            if hasattr(self, 'functext'):                
+            if hasattr(self, 'functext'):
                 legend = []
                 ylist = [] # list of results
+
+                # get slider values for use in interactive display
+                S = []
+                for ss in self.funcsliders:
+                    S.append(ss.value()/1000.)
+                S = np.array(S)
+
                 for ff in self.functext:
                     txt_str = unicode(ff.text())
                     print txt_str
@@ -202,7 +210,7 @@ class AppForm(QMainWindow):
                         self.axes.plot(x,y)
                         self.axes.set_xlim(x[0],x[-1])
                         ylist.append(y)
-                        legend.append(txt_str)
+                        legend.append(txt_str)                
                 
                 if len(ylist)>1:
                     ymat = np.array(ylist)
@@ -243,10 +251,17 @@ class AppForm(QMainWindow):
             if len(text_lim)==1:
                 self.x_lim.append(1.)
             if len(text_lim)==2:
-                self.x_lim.append(0.1)  
+                self.x_lim.append(0.1)
 
-            x = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # variable 1
-            y = np.arange(self.x_lim[0],self.x_lim[1],self.x_lim[2]) # variable 2
+            # get slider values for interactive display
+            S = []
+            for ss in self.funcsliders:
+                S.append(ss.value()/1000.)
+            S = np.array(S)
+
+            # symmetrical x-/y-ranges
+            x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 1
+            y = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 2
 
             x = x * self.slider_scale.value()/10. # scale x-axis with slider value
             y = y * self.slider_scale.value()/10. # scale x-axis with slider value
@@ -268,8 +283,9 @@ class AppForm(QMainWindow):
                         z = np.array( eval(tt) )
                         zlist.append(y)                        
                         self.axes.scatter(z[0,], z[1,], marker='x', s=10, c=plot_colors[ti])
+                        cov = np.dot(z[0,],z[1,])
                         corr = np.corrcoef(z[0,], z[1,])
-                        legend.append( "%s %.3f" % (tt, corr[0,1]) )
+                        legend.append( "%s %.2f %.2f" % (tt, corr[0,1], cov) )
 
                 min_x, max_x = np.min(z[0,]), np.max(z[0,])
                 min_y, max_y = np.min(z[1,]), np.max(z[1,])
@@ -292,14 +308,35 @@ class AppForm(QMainWindow):
         
             if not(hasattr(self, 'functext')):
                 self.functext = [] # initialise list
+                self.funclabels = []
 
             n = len(self.functext)
 
             self.functext.append(QLineEdit()) # textbox for functions to be executed
             self.functext[n].setMinimumWidth(200)
+            self.connect(self.functext[n], SIGNAL('editingFinished ()'), self.on_draw)
+
+            disp_text = str(n) + ":"
+            
+            self.funclabels.append(QLabel(disp_text))
+
+            # noise sliders
+            if not(hasattr(self, 'funcsliders')):
+                self.funcsliders = []
+                self.fslidelabels = []
+            
+            self.funcsliders.append(QSlider(Qt.Horizontal))
+            self.funcsliders[n].setRange(0, 1000)
+            self.funcsliders[n].setValue(0)
+            self.funcsliders[n].setTracking(True)
+            self.funcsliders[n].setTickPosition(QSlider.TicksBelow)
+            self.funcsliders[n].setTickInterval(50)
+            self.connect(self.funcsliders[n], SIGNAL('valueChanged(int)'), self.on_draw)
+
+            self.fslidelabels.append(QLabel(disp_text))
+
             self.create_main_frame()
             self.on_draw()
-            self.connect(self.functext[n], SIGNAL('editingFinished ()'), self.on_draw)
         
         elif self.display_option == 2: # Correlation
             
@@ -414,33 +451,67 @@ class AppForm(QMainWindow):
             
         # Create layout within canvas
 
-        hbox = QHBoxLayout()   # buttons, sliders, etc.
+        hbox1 = QHBoxLayout()   # buttons, sliders, etc.
         hbox2 = QHBoxLayout()  # text boxes for regression
-        hbox3 = QHBoxLayout()  # text boxes for correlation
-        
-        # for w in [  self.textbox, self.draw_button, self.grid_cb,
-        #             slider_label, self.slider]:
+        hbox3 = QHBoxLayout()  # sliders for noise in regression
+        hbox4 = QHBoxLayout()  # text boxes for correlation        
+               
         attr_list = [self.textbox_lim, self.draw_button, self.add_button,
                         self.slider_label, self.slider_scale, self.comboBox]        
 
+        # HBOX1 for Draw/Add buttons etc.
         for w in attr_list:
-            hbox.addWidget(w)
-            hbox.setAlignment(w, Qt.AlignVCenter)
+            hbox1.addWidget(w)
+            hbox1.setAlignment(w, Qt.AlignVCenter)
 
-        # initialise or add text boxes       
+        ## initialise or add TEXT BOXES
         keep_dispopt = self.display_option
-        self.display_option==1 # Regression
+        
+        # REGRESSION text and slider boxes
+        self.display_option==1        
         if not(hasattr(self, 'functext')):
+            self.funclabels = []
+            self.funclabels.append(QLabel('0:'))
+
             self.functext = []
             self.functext.append(QLineEdit()) # textbox for functions to be executed
-            self.functext[0].setMinimumWidth(200)            
+            self.functext[0].setMinimumWidth(200)
             self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)
-        else:
-            for w in self.functext:
-                hbox2.addWidget(w)
-                hbox2.setAlignment(w, Qt.AlignVCenter)
 
-        self.display_option==2 # Correlation
+            # noise sliders
+            self.fslidelabels = []
+            self.fslidelabels.append(QLabel('0:'))
+
+            self.funcsliders = []            
+            self.funcsliders.append(QSlider(Qt.Horizontal))
+            self.funcsliders[0].setRange(0, 1000)
+            self.funcsliders[0].setMinimumWidth(200)
+            self.funcsliders[0].setValue(0)
+            self.funcsliders[0].setTracking(True)
+            self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
+            self.funcsliders[0].setTickInterval(50)
+            self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
+
+
+        for aa in range(len(self.functext)):
+            w = self.funclabels[aa]
+            hbox2.addWidget(w)
+
+            w = self.functext[aa]
+            hbox2.addWidget(w)
+            hbox2.setAlignment(w, Qt.AlignVCenter)
+            
+            # noise sliders
+            w = self.fslidelabels[aa]
+            hbox3.addWidget(w)
+
+            w = self.funcsliders[aa]
+            hbox3.addWidget(w)
+            hbox3.setAlignment(w, Qt.AlignVCenter)
+
+
+        # CORRELATION text box
+        self.display_option==2
         if not(hasattr(self, 'corrtext')):
             self.corrtext = []
             self.corrtext.append(QLineEdit()) # textbox for functions to be executed
@@ -448,8 +519,8 @@ class AppForm(QMainWindow):
             self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)
         else:
             for w in self.corrtext:
-                hbox3.addWidget(w)
-                hbox3.setAlignment(w, Qt.AlignVCenter)
+                hbox4.addWidget(w)
+                hbox4.setAlignment(w, Qt.AlignVCenter)
 
         self.display_option = keep_dispopt
                 
@@ -458,9 +529,10 @@ class AppForm(QMainWindow):
         # if self.display_option==1: # only for regression
         #     vbox.addWidget(self.canvas2)
         vbox.addWidget(self.mpl_toolbar)
-        vbox.addLayout(hbox)
+        vbox.addLayout(hbox1)
         vbox.addLayout(hbox2)
         vbox.addLayout(hbox3)
+        vbox.addLayout(hbox4)
         
         self.main_frame.setLayout(vbox)
         self.setCentralWidget(self.main_frame)
