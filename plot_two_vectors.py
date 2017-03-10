@@ -14,6 +14,8 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import numpy as np
+from numpy import sin,sinh,cos,cosh,tan,tanh,exp,exp2,expm1,arcsin,arcsinh,arccos,arccosh,arctan,arctanh,arctan2,pi
+# note: pi is now np.pi, don't use as index of p
 from numpy.random import * # for use in interactive displays
 
 import scipy.linalg
@@ -25,7 +27,50 @@ from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+print "!!!"
+print "This is still under development."
+print "!!!"
+
+global x_global
+x_global = [] # keep track of x-axis for plotting etc.
+
 plot_colors = ['b', 'g', 'r', 'c', 'm', 'k', 'w']
+
+def box(p=0, w=0):
+    # draw a box car function
+    # p: float, position on x-axis (ms)
+    # w: float, width of peak (ms)    
+    # returns: numpy array with box
+    # uses self.prec: in case x is a scalar, minimum distance for peak
+    global x_global    
+
+    x = np.array(x_global)
+
+    # x = np.arange(-100,100)
+
+    n = x.shape    
+
+    if n!=(): # if array
+
+        y = np.zeros(n)
+
+        if w==0: # delta peak wanted, find nearest index
+            i = np.argmin(np.abs(x-p))
+            y[i] = 1
+        else: # make boxcar
+            y[np.where((x<=(p+w/2)) & (x>=(p-w/2)))] = 1.
+
+    else: # if just one scalar number
+        if w==0: # delta peak wanted, find nearest index
+            if np.abs(x-p) < self.prec:
+                y = np.array(1.)
+        elif (x<=(p+w/2)) & (x>=(p-w/2)): # make boxcar            
+            y = np.array(1.)
+        else:
+            y = 0
+
+    return y
+
 
 class AppForm(QMainWindow):
     def __init__(self, parent=None):
@@ -35,13 +80,11 @@ class AppForm(QMainWindow):
         # What do display: 0 -> vectors, 1 -> regression
         self.display_option = 0
 
-        # self.create_menu()
-
-        self.create_main_frame()
-        # self.create_status_bar()        
-
         # coordinates from mouse clicks
         self.data_mouse = []
+
+        self.create_main_frame()
+        # self.create_status_bar()
         
         self.on_draw()        
 
@@ -63,6 +106,8 @@ class AppForm(QMainWindow):
             self.display_option = 1
         elif (text=='Correlation'):
             self.display_option = 2
+        elif (text=='Inverse Problem'):
+            self.display_option = 3
         
         self.create_main_frame()
         self.on_draw()
@@ -126,18 +171,14 @@ class AppForm(QMainWindow):
     def on_draw(self):
         """ Redraws the figure
         """
-        # str = unicode(self.textbox.text())
-        # # self.data = map(int, str.split())
-        # self.data = map(float, str.split())
-
-        print "Draw"
-        
+        global x_global # keep track of x-values for display
+      
         # x = range(len(self.data))
 
         # clear the axes and redraw the plot anew
         #
         self.axes.clear()
-        self.axes.grid(True)
+        # self.axes.grid(True)
         # self.axes.grid(self.grid_cb.isChecked())       
 
         str_txt = unicode(self.textbox_lim.text())
@@ -209,13 +250,11 @@ class AppForm(QMainWindow):
                         self.axes.plot(x,y,c=plot_colors[fi])
                         self.axes.set_xlim(x[0],x[-1])
                         ylist.append(y)
-                        legend.append(txt_str)                
+                        legend.append(txt_str)
                 
                 if len(ylist)>1:
                     ymat = np.array(ylist)
-                    corrmat = np.corrcoef(ymat) # correlation matrix
-                    print corrmat
-                    print ymat.shape
+                    corrmat = np.corrcoef(ymat) # correlation matrix                    
                     covmat = np.cov(ymat) # covariance matrix
 
                     # correlation or covariance to display
@@ -240,8 +279,11 @@ class AppForm(QMainWindow):
                     # add colorbar
                     divider2 = make_axes_locatable(self.axes2)
                     cax2 = divider2.append_axes("right", size="20%", pad=0.05)
-                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)                    
+                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)
                     cb.ax.tick_params(labelsize=6)
+                    ### CHANGE: updating colorbar doesn't seem to work
+                    cb.vmin = disp_mat.min()
+                    cb.vmax = disp_mat.max()                    
 
                     # Fit Regression, explain first function by other functions
                     X = ymat[1:,:].T
@@ -311,8 +353,143 @@ class AppForm(QMainWindow):
                 self.axes.set_xlim(min_x, max_x)
                 self.axes.set_ylim(min_y, max_y)                
 
-                self.axes.legend(legend, loc=2, prop={'size': 6})
-    
+                self.axes.legend(legend, loc=2, prop={'size': 4})
+
+        ## display INVERSE PROBLEM
+        elif self.display_option==3:
+
+            self.axes2.clear()
+
+            n_src = 101 # number of sources
+            n_dat = np.ceil((n_src-1)/10) # number of sensors/signals
+
+            x_ori = x # keep x values, variable x will be changed because of interactive functions            
+
+            # x-axis locations of "sources"
+            step_src = (x_ori[-1]-x_ori[0])/(n_src-1)
+            src_x = np.arange(x_ori[0],x[-1]+step_src,step_src)
+            # x-axis locations where data will be sampled
+            step_dat = (x_ori[-1]-x_ori[0])/(n_dat-1)
+            dat_x = np.arange(x[0],x[-1]+step_dat,step_dat)            
+
+            src_sig = np.zeros([n_dat,n_src]) # "leadfield", data produced by sources
+
+            # regularisation parameter, fraction of matrix traces
+            ss = self.funcsliders[0].value()
+            if ss==0:
+                regparam = 0
+            else:
+                regparam = self.funcsliders[0].value()/100.
+            print "Regularisation Parameter: %.2f" % (regparam)
+
+            # insert defaults where necessary
+            if len(text_lim)==0:
+                self.x_lim.append(-1.)
+            if len(text_lim)==1:
+                self.x_lim.append(1.)
+            if len(text_lim)==2:
+                self.x_lim.append(0.01)
+
+            if hasattr(self, 'functext'):
+                legend = []
+                ylist = [] # list of results
+
+                # get slider values for use in interactive display
+                S = []
+                for ss in self.funcsliders:
+                    S.append(ss.value()/1000.)
+                S = np.array(S)                
+
+                # function for source kernels
+                txt_str = unicode(self.invprobtext[0].text())
+
+                n = len(x) # for use in interactive text
+                x_global = src_x # to use box() etc.                
+
+                src_act = [] # list with source activities
+                signal = np.zeros([len(dat_x),1]) # signals at sensor points
+                for [xsi,xs] in enumerate(src_x):
+
+                    for [xdi,xd] in enumerate(dat_x):
+                        x = xd - xs # distance between source and sensor
+                        x_global = x
+                        n = 1
+                        self.prec = step_src / 2 # in case box car function wanted per value
+                        src_sig[xdi,xsi] = np.array( eval(txt_str) ) # "leadfield"
+                        signal[xdi] = signal[xdi] + src_sig[xdi,xsi] # measured signal
+
+                    x = x_ori - xs
+                    x_global = x
+                    n = len(x)
+                    src_act.append( np.array( eval(txt_str) ) ) ### CHANGE: duplicates src_sig?
+
+                # fit source to given signal
+                x = src_x
+                x_global = x # to use box() etc.
+                n = len(x) # for use in interactive text
+
+                # source activity given by user
+                # function for source kernels
+                txt_str = unicode(self.invprobtext[1].text())
+                my_source = np.array( eval(txt_str) )
+
+                # given signal:
+                txt_str = unicode(self.invprobtext[1].text())
+                y = src_sig.dot(my_source) # "leadfield times sources"
+                # compute signal at higher sampling for display                
+                x = x_ori
+                x_global = x
+                n = len(x) # for use in interactive text
+                y_xori = np.array( eval(txt_str) )
+
+                X = src_sig # source activities as columns
+                # Tikhonov on foot:
+                Xgram = X.dot(X.T)
+                Xgramtrace = np.trace(Xgram)
+                Xreg = np.eye(Xgram.shape[0]) * (Xgramtrace/n_dat) * regparam # identity matrix adjusted trace
+                Xreginv = scipy.linalg.pinv(Xgram+Xreg)
+                pinvX = X.T.dot(Xreginv)
+                
+                b = pinvX.dot(y) # parameter estimates
+
+                Xest = X.dot(b) # estimated signal
+
+                # residual variance (%)
+                resvar = 100 * sum((y-Xest)**2) / sum(y**2)
+                print "Residual Variance: %.2f" % (resvar)
+                self.progress.setValue(resvar)
+
+                # plot given and estimated signal as bar graphs
+                print dat_x
+                ww = step_dat/3 # note: bars get left edge of bars
+                self.axes.bar(dat_x-ww/2,y,width=ww,color='green') # leave gaps between bars
+                self.axes.bar(dat_x+ww/2,Xest,width=ww,color='blue')
+                self.axes.xaxis.set_ticks(dat_x)
+                self.axes.tick_params(axis='both', which='major', labelsize=4)
+                self.axes.legend(["measured", "estimated"], loc=1, prop={'size': 4})
+               
+                self.axes.plot(x_ori, y_xori, linestyle='--', linewidth=0.5, c='green')
+
+                self.axes.set_xlim(x_ori[0], x_ori[-1])
+                b = b  # for display
+
+                # plot some kernels
+                for [xsi,xs] in enumerate(src_x):
+                    if np.mod(xsi,20)==0:
+                        self.axes2.plot(x_ori,b[xsi]*src_act[xsi]/np.max(b),c='lightgrey',linestyle='--', linewidth=0.5)
+                        self.axes2.set_xlim(x_ori[0], x_ori[-1])
+
+                # for normalisation in plot
+                maxi = np.max( np.abs( np.column_stack([my_source,b]) ) )
+
+                # plot parameter estimate distribution
+                self.axes2.bar(src_x,b/maxi,step_src)
+
+                # plot true (given) parameter distribution
+                self.axes2.plot(src_x,my_source/maxi,c='black')
+
+                x = x_ori
+
         self.fig.tight_layout()
         self.canvas.draw()
 
@@ -323,7 +500,7 @@ class AppForm(QMainWindow):
         """
         print "Adding function"
 
-        if self.display_option==1: # Regression
+        if self.display_option==1 or self.display_option==3: # Regression or Inverse Problem
         
             if not(hasattr(self, 'functext')):
                 self.functext = [] # initialise list
@@ -333,7 +510,7 @@ class AppForm(QMainWindow):
 
             disp_text = str(n) + ":" # text for label
 
-            self.functext.append(QLineEdit()) # textbox for functions to be executed
+            self.functext.append(QLineEdit("np.exp(-10*x**2)")) # textbox for functions to be executed
             self.functext[n].setMinimumWidth(200)
             self.connect(self.functext[n], SIGNAL('editingFinished ()'), self.on_draw)
             
@@ -356,6 +533,7 @@ class AppForm(QMainWindow):
             self.corrlabels.append(QLabel(disp_text))
 
         self.create_main_frame()
+        self.on_draw()
 
 
     def on_add_slider(self):
@@ -401,7 +579,9 @@ class AppForm(QMainWindow):
 
         ## new from https://github.com/matplotlib/matplotlib/issues/707/
         self.canvas.setFocusPolicy( Qt.ClickFocus )
-        self.canvas.setFocus()        
+        self.canvas.setFocus()
+
+        attr_list = [] # attribute list for hbox widgets
 
                 
         # Since we have only one plot, we can use add_axes 
@@ -423,14 +603,26 @@ class AppForm(QMainWindow):
             self.axes.grid(True, 'major')
             self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-            self.axes2 = self.fig.add_subplot(223)                        
+            self.axes2 = self.fig.add_subplot(223)
             # self.axes2.grid(True, 'major')
-            self.axes2.tick_params(axis='both', which='major', labelsize=6)            
+            self.axes2.tick_params(axis='both', which='major', labelsize=6)
 
             self.axes3 = self.fig.add_subplot(224)
             self.axes3.grid(True, 'major')
             self.axes3.tick_params(axis='both', which='major', labelsize=6)
             self.axes3.set_title("Estimates", {'fontsize': 6})
+
+        elif self.display_option==3: # for underdetermined inverse problem
+            self.axes = self.fig.add_subplot(211)
+            self.axes.set_xlim([-1, 1])
+            self.axes.set_ylim([-1., 1.])
+            self.axes.grid(True, 'major')
+            self.axes.tick_params(axis='both', which='major', labelsize=6)
+
+            self.axes2 = self.fig.add_subplot(212)
+            self.axes2.set_xlim([-1, 1])
+            self.axes2.set_ylim([-1.05, 1.05])
+            self.axes2.tick_params(axis='both', which='major', labelsize=6)
         
         # Create the navigation toolbar, tied to the canvas
         #
@@ -443,20 +635,24 @@ class AppForm(QMainWindow):
         #         
 
         ## Text for x-axis limits (min, max, step)
-        if not(hasattr(self, 'textbox_lim')):            
+        if not(hasattr(self, 'textbox_lim')):
             self.textbox_lim = QLineEdit()
             self.textbox_lim.setText('-1 1 0.01')
             self.textbox_lim.setMinimumWidth(200)
-            self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)        
+            self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)
+        attr_list.append(self.textbox_lim)
         
         self.draw_button = QPushButton("&Draw")
         self.connect(self.draw_button, SIGNAL('clicked()'), self.on_draw)
+        attr_list.append(self.draw_button)
 
         self.add_func_button = QPushButton("&+Func") # add textbox for function plotting
         self.connect(self.add_func_button, SIGNAL('clicked()'), self.on_add_func)
+        attr_list.append(self.add_func_button)
 
         self.add_slider_button = QPushButton("&+Slider") # add slider for function plotting
         self.connect(self.add_slider_button, SIGNAL('clicked()'), self.on_add_slider)
+        attr_list.append(self.add_slider_button)
 
         # Menu box for display options (vectors. regression, correlation)
         if not(hasattr(self, 'comboBox')):
@@ -464,10 +660,12 @@ class AppForm(QMainWindow):
             self.comboBox.addItem("Vectors")
             self.comboBox.addItem("Regression")
             self.comboBox.addItem("Correlation")
+            self.comboBox.addItem("Inverse Problem")
 
             self.comboBox.activated[str].connect(self.display_method)
+        attr_list.append(self.comboBox)
 
-        # menu for correlation/covariance
+        # menu for correlation/covariance display in regression
         if not(hasattr(self, 'corrBox')):
             self.corrBox = QComboBox(self)
             self.corrBox.addItem("Disp Corr")
@@ -475,6 +673,8 @@ class AppForm(QMainWindow):
             self.display_covcorr = 0 # Default: Correlation
 
             self.corrBox.activated[str].connect(self.covcorr)
+
+        attr_list.append(self.corrBox)
 
         ## Slider
         if not(hasattr(self, 'slider_scale')):
@@ -487,17 +687,17 @@ class AppForm(QMainWindow):
             self.slider_scale.setTickPosition(QSlider.TicksBelow)
             self.slider_scale.setTickInterval(50)
             self.connect(self.slider_scale, SIGNAL('valueChanged(int)'), self.on_draw)
+        
+        attr_list.append(self.slider_label)
+        attr_list.append(self.slider_scale)
             
         # Create layout within canvas
 
         hbox1 = QHBoxLayout()   # buttons, sliders, etc.
         hbox2 = QHBoxLayout()  # text boxes for regression
         hbox3 = QHBoxLayout()  # sliders for noise in regression
-        hbox4 = QHBoxLayout()  # text boxes for correlation        
-               
-        attr_list = [self.textbox_lim, self.draw_button, self.add_func_button,
-                    self.add_slider_button, self.slider_label, self.slider_scale,
-                    self.corrBox, self.comboBox]
+        hbox4 = QHBoxLayout()  # text boxes for correlation
+        hbox5 = QHBoxLayout()  # text boxes for inverse problem
 
         # HBOX1 for Draw/Add buttons etc.
         for w in attr_list:
@@ -506,17 +706,27 @@ class AppForm(QMainWindow):
 
         ## initialise or add TEXT BOXES
         
-        # REGRESSION text and slider boxes
+        # REGRESSION text and slider boxes        
         if not(hasattr(self, 'functext')):
             self.funclabel = QLabel('Regr:') # for box with regression functions
 
-            self.funclabels = []
+            self.funclabels = []            
             self.funclabels.append(QLabel('0:'))
 
             self.functext = []
-            self.functext.append(QLineEdit()) # textbox for functions to be executed
+            self.functext.append(QLineEdit("np.exp(-10*x**2)")) # textbox for functions to be executed
             self.functext[0].setMinimumWidth(200)
-            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)
+            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)        
+
+        # add function text boxes to box
+        hbox2.addWidget(self.funclabel)
+        for aa in range(len(self.functext)):
+            w = self.funclabels[aa]
+            hbox2.addWidget(w)
+
+            w = self.functext[aa]
+            hbox2.addWidget(w)
+            hbox2.setAlignment(w, Qt.AlignVCenter)
 
             
         if not(hasattr(self, 'funcsliders')):
@@ -533,16 +743,6 @@ class AppForm(QMainWindow):
             self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
             self.funcsliders[0].setTickInterval(50)
             self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
-
-        # add function text boxes to box
-        hbox2.addWidget(self.funclabel)
-        for aa in range(len(self.functext)):
-            w = self.funclabels[aa]
-            hbox2.addWidget(w)
-
-            w = self.functext[aa]
-            hbox2.addWidget(w)
-            hbox2.setAlignment(w, Qt.AlignVCenter)
         
         # add function sliders to box
         for aa in range(len(self.fslidelabels)):
@@ -553,6 +753,8 @@ class AppForm(QMainWindow):
             hbox3.addWidget(w)
             hbox3.setAlignment(w, Qt.AlignVCenter)
 
+        if self.display_option == 3:
+            self.fslidelabels[0].setText("Reg: ")
 
         # CORRELATION text box        
         if not(hasattr(self, 'corrtext')):
@@ -564,8 +766,8 @@ class AppForm(QMainWindow):
             self.corrtext = []
             self.corrtext.append(QLineEdit()) # textbox for functions to be executed
             self.corrtext[0].setMinimumWidth(200)            
-            self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)        
-        
+            self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)
+    
         # add correlation text boxes to box
         hbox4.addWidget(self.corrlabel)
         for aa in range(len(self.corrtext)):
@@ -576,16 +778,54 @@ class AppForm(QMainWindow):
             hbox4.addWidget(w)
             hbox4.setAlignment(w, Qt.AlignVCenter)
 
+
+        # INVERSE PROBLEM text boxes
+        if not(hasattr(self, 'invprobtext')):
+            self.invproblabel = QLabel('Inv Prob:') # for box with regression functions
+
+            self.invproblabels = []
+            self.invproblabels.append(QLabel('Kern:'))
+
+            self.invprobtext = []
+            # add two text boxes for source activity and signal to be fitted
+            self.invprobtext.append(QLineEdit("np.exp(-10*x**2)")) # textbox for functions to be executed
+            self.invprobtext[0].setMinimumWidth(200)
+            self.connect(self.invprobtext[0], SIGNAL('editingFinished ()'), self.on_draw)
+
+            self.invproblabels.append(QLabel('Src:'))
+            self.invprobtext.append(QLineEdit("sin(x*pi)")) # textbox for functions to be executed
+            self.invprobtext[1].setMinimumWidth(200)
+            self.connect(self.invprobtext[1], SIGNAL('editingFinished ()'), self.on_draw)
+
+            self.proglabel = QLabel('RV:') # progress bar for residual variance
+            self.progress = QProgressBar(self)
+            self.progress.setGeometry(200, 80, 250, 20)
+
+        # add function text boxes to box
+        hbox5.addWidget(self.invproblabel)
+        for aa in range(len(self.invprobtext)):
+            w = self.invproblabels[aa]
+            hbox5.addWidget(w)
+
+            w = self.invprobtext[aa]
+            hbox5.addWidget(w)
+            hbox5.setAlignment(w, Qt.AlignVCenter)
+        
+        hbox5.addWidget(self.proglabel)
+        hbox5.addWidget(self.progress)
+
                 
         vbox = QVBoxLayout()
         vbox.addWidget(self.canvas)
         # if self.display_option==1: # only for regression
         #     vbox.addWidget(self.canvas2)
         vbox.addWidget(self.mpl_toolbar)
-        vbox.addLayout(hbox1)
+
+        vbox.addLayout(hbox1)        
         vbox.addLayout(hbox2)
         vbox.addLayout(hbox3)
         vbox.addLayout(hbox4)
+        vbox.addLayout(hbox5)
         
         self.main_frame.setLayout(vbox)
         self.setCentralWidget(self.main_frame)

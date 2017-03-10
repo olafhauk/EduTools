@@ -12,7 +12,8 @@ from PyQt4.QtGui import *
 
 import numpy as np
 # for use in text functions
-from numpy import sin,sinh,cos,cosh,tan,tanh,exp,exp2,expm1,arcsin,arcsinh,arccos,arccosh,arctan,arctanh,arctan2
+from numpy import sin,sinh,cos,cosh,tan,tanh,exp,exp2,expm1,arcsin,arcsinh,arccos,arccosh,arctan,arctanh,arctan2,pi
+# note: pi is now np.pi, don't use as index of p
 from numpy.random import * # for use in interactive displays
 
 import scipy.linalg
@@ -26,7 +27,51 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from time import sleep
 
+print "!!!"
+print "This is still under development."
+print "!!!"
+
 plot_colors = ['b', 'g', 'r', 'c', 'm', 'k', 'w']
+
+# global variables
+global x_global
+x_global = [] # keep track of x-axis for plotting etc.
+
+def box(p=0, w=0):
+    # draw a box car function
+    # p: float, position on x-axis (ms)
+    # w: float, width of peak (ms)    
+    # returns: numpy array with box
+    # uses self.prec: in case x is a scalar, minimum distance for peak
+    global x_global    
+
+    x = np.array(x_global)
+
+    # x = np.arange(-100,100)
+
+    n = x.shape    
+
+    if n!=(): # if array
+
+        y = np.zeros(n)
+
+        if w==0: # delta peak wanted, find nearest index
+            i = np.argmin(np.abs(x-p))
+            y[i] = 1
+        else: # make boxcar
+            y[np.where((x<=(p+w/2)) & (x>=(p-w/2)))] = 1.
+
+    else: # if just one scalar number
+        if w==0: # delta peak wanted, find nearest index
+            if np.abs(x-p) < self.prec:
+                y = np.array(1.)
+        elif (x<=(p+w/2)) & (x>=(p-w/2)): # make boxcar            
+            y = np.array(1.)
+        else:
+            y = 0
+
+    return y
+
 
 class AppForm(QMainWindow):
     def __init__(self, parent=None):
@@ -34,10 +79,7 @@ class AppForm(QMainWindow):
         self.setWindowTitle('Filter demo')
 
         # What do display: 0 -> vectors, 1 -> regression
-        self.display_option = 0
-
-        # by default don't show moving filter kernel
-        self.show_movie = 0
+        self.display_option = 0        
 
         # self.create_menu()
 
@@ -95,12 +137,8 @@ class AppForm(QMainWindow):
     def on_draw(self):
         """ Redraws the figure
         """
-        # str = unicode(self.textbox.text())
-        # # self.data = map(int, str.split())
-        # self.data = map(float, str.split())
-
-        print "Draw"
-        
+        global x_global # x-axis for plotting
+      
         # x = range(len(self.data))
 
         # clear the axes and redraw the plot anew
@@ -123,16 +161,22 @@ class AppForm(QMainWindow):
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
         x = x * scale_fac # scale x-axis with slider value
         n = len(x) # for use in interactive displays
+        x_global = x
 
         ## display FILTERS
         if self.display_option==0:
 
             SF = 1000/self.x_lim[2] # sampling frequency
+            self.SF = SF
             F = self.funcsliders[0].value() # frequency of signal
 
             FWHM = self.funcsliders[1].value() # width of Gaussian filter kernel (ms)
             print("FWHM: %f" % (FWHM))
-            n_steps = 500 # number of steps for convolution with filter kernel
+            n_steps = 50 # number of steps for convolution with filter kernel
+            step_min = x[30] # where to start/stop convoluting
+            step_max = x[-30]
+            # x-values where convolution kernel to be applied
+            self.steps = np.arange(step_min, step_max, (step_max-step_min)/n_steps)
 
             ## Signal time course
             y = np.zeros([n,1])
@@ -151,15 +195,14 @@ class AppForm(QMainWindow):
             y2 = max(max(y),0)
             self.axes.set_ylim(y1, y2)
 
-            ## convolve with Gaussian
-            # x-values where convolution kernel to be applied
-            self.steps = np.arange(min(x), max(x), (max(x)-min(x))/n_steps)
+            ## convolve with Gaussian            
 
             self.x = x
             self.y = y
             self.FWHM = FWHM
-            self.ss = min(x)
-            self.step = (max(x)-min(x))/n_steps
+            self.ss = self.steps[0]
+            self.stepsize = self.steps[1]-self.steps[0]
+            self.step = 0 # count steps in convolution movie
             self.y_conv = [] # convolution of kernel and signal, created in plot_gauss()
 
             # FFT of Gauss kernel
@@ -189,7 +232,9 @@ class AppForm(QMainWindow):
                 # start timer to plot moving Gaussian kernels
                 self.timer = QTimer(self)
                 self.connect(self.timer, SIGNAL("timeout()"), self.plot_gauss)
-                self.timer.start(1)
+                self.timer.start(10)
+            
+            self.show_movie = 0
                     
             # Plot signal frequency spectrum
             fft_y = np.fft.fft(y)
@@ -213,8 +258,8 @@ class AppForm(QMainWindow):
         self.axes.clear()
 
         # variables available to external text function
-        ss = self.ss # current x-value for convolution
-        x = self.x - ss # adjust for computation of current kernel
+        ss = self.steps[self.step] # current x-value for convolution
+        x_ori = self.x
         y = self.y
         FWHM = self.FWHM        
         steps = self.steps
@@ -225,25 +270,49 @@ class AppForm(QMainWindow):
         # compute and plot filter kernel
         txt_str = unicode( self.functext[1].text() )
 
-        if txt_str == '':
-            filt_kern = np.exp(-x**2/(2*FWHM**2)) # filter kernel            
-        else:
-            filt_kern = np.array( eval(txt_str) )
+        # compute convolution values for all x-values (but only plot up to current step)
+        if self.step == 0:
 
-        filt_kern = filt_kern / np.sum(filt_kern) # normalise kernel to unit area
+            self.y_conv = [] # convolution time series
+            self.filt_kern = [] # moving filter kernels at different time points
             
-        self.axes.plot(self.x,filt_kern/np.max(filt_kern))
+            for xx in x_ori:
+                x = x_ori - xx # move kernel along x-axis
+                if txt_str == '':
+                    filt_kern = np.exp(-x**2/(2*FWHM**2)) # filter kernel            
+                else:
+                    filt_kern = np.array( eval(txt_str) )
 
-        # compute and plot convolution
-        self.y_conv.append(y.dot(filt_kern))
-        n_conv = len(self.y_conv)
-        self.axes.plot(self.steps[:n_conv], self.y_conv)
+                filt_kern = filt_kern / np.sum(filt_kern) # normalise kernel to unit area
 
-        # increase step, cancel loop when end reached
-        self.ss = self.ss + self.step
+                self.y_conv.append(y.dot(filt_kern))
+
+                # keep filter kernels at step points                
+                samp_dist = 1000./self.SF # sample distance (ms)
+                if np.min(np.abs(steps-xx)) < samp_dist/2.: # a hack to find step points
+                    self.filt_kern.append(filt_kern)
+                
+        ss_idx = np.argmin(np.abs(x_ori-ss)) # index up to which to plot
+        from_idx = np.argmin(np.abs(x_ori-self.steps[0])) # index from which to plot convolution
+
+        max_y = np.max(self.y)
+        filt_kern = (max_y/np.max(self.filt_kern[self.step]))*self.filt_kern[self.step]
+
+        # plot current filter kernel
+        self.axes.plot(x_ori,filt_kern)
+
+        # plot convolution up to current step
+        self.axes.plot(x_ori[from_idx:ss_idx],self.y_conv[from_idx:ss_idx])
+
+            
+        # increase step, cancel loop when end reached        
+        self.ss = self.ss + self.stepsize
         self.canvas.draw()
-        if self.ss >= max(self.x):
+        if self.step >= len(self.filt_kern)-1:
             self.timer.stop()
+            self.show_movie = 0        
+
+        self.step = self.step + 1
 
 
     def on_movie(self):
@@ -302,6 +371,7 @@ class AppForm(QMainWindow):
         # 5x4 inches, 100 dots-per-inch
         #
         self.dpi = 200
+        self.show_movie = 0 # by default don't show moving filter kernel
        
         self.fig = Figure((5.0, 4.0), dpi=self.dpi)
         self.canvas = FigureCanvas(self.fig)
@@ -539,7 +609,6 @@ class AppForm(QMainWindow):
         if checkable:
             action.setCheckable(True)
         return action
-
 
 def main():
     app = QApplication(sys.argv)
