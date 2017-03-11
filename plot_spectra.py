@@ -220,7 +220,7 @@ class AppForm(QMainWindow):
 
             # Plot Gaussian kernel frequency spectrum
             fft_g = np.fft.fft(filt_kern)
-            fft_g2 = fft_g[0:np.floor(n/2)]
+            fft_g2 = fft_g[0:int(np.floor(n/2))]
             psd_g = np.abs(fft_g2)**2 / (SF*n)
             psd_g[1:-2] = 2*psd_g[1:-2]
 
@@ -238,7 +238,7 @@ class AppForm(QMainWindow):
                     
             # Plot signal frequency spectrum
             fft_y = np.fft.fft(y)
-            fft_y2 = fft_y[0:np.floor(n/2)]
+            fft_y2 = fft_y[0:int(np.floor(n/2))]
             psd_y = np.abs(fft_y2)**2 / (SF*n)
             psd_y[1:-2] = 2*psd_y[1:-2]
 

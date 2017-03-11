@@ -244,7 +244,6 @@ class AppForm(QMainWindow):
 
                 for [fi,ff] in enumerate(self.functext):
                     txt_str = unicode(ff.text())
-                    print txt_str
                     if (txt_str != ''):
                         y = np.array( eval(txt_str) )
                         self.axes.plot(x,y,c=plot_colors[fi])
@@ -290,11 +289,9 @@ class AppForm(QMainWindow):
                     pinvX = scipy.linalg.pinv(X)
                     b = pinvX.dot(ymat[0,:].T)
                     ye = X.dot(b)
-                    print ye.shape, b.shape, X.shape
                     self.axes.plot(x,ye,c='k',linestyle='--')
 
                     # plot parameter estimates
-                    print b
                     nb = len(b)
                     b_x = np.arange(0,nb) + .6 # start at 1, because 0 is predicted variable
                     self.h_bar = self.axes3.bar(b_x,b,.8)
@@ -361,7 +358,7 @@ class AppForm(QMainWindow):
             self.axes2.clear()
 
             n_src = 101 # number of sources
-            n_dat = np.ceil((n_src-1)/10) # number of sensors/signals
+            n_dat = int(np.ceil((n_src-1)/10)) # number of sensors/signals
 
             x_ori = x # keep x values, variable x will be changed because of interactive functions            
 
@@ -460,7 +457,6 @@ class AppForm(QMainWindow):
                 self.progress.setValue(resvar)
 
                 # plot given and estimated signal as bar graphs
-                print dat_x
                 ww = step_dat/3 # note: bars get left edge of bars
                 self.axes.bar(dat_x-ww/2,y,width=ww,color='green') # leave gaps between bars
                 self.axes.bar(dat_x+ww/2,Xest,width=ww,color='blue')
