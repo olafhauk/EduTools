@@ -155,11 +155,11 @@ class AppForm(QMainWindow):
         self.x_lim = text_lim
 
         # scaling of x-axis from slider
-        scale_fac = self.slider_scale.value() / 10.
+        scale_fac = self.slider_scale.value() / 200.
 
         # symmetrical x-range
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
-        x = x * scale_fac # scale x-axis with slider value
+        # x = x * scale_fac # scale x-axis with slider value
         n = len(x) # for use in interactive displays
         x_global = x
 
@@ -190,9 +190,9 @@ class AppForm(QMainWindow):
 
             self.axes.plot(x,y) # plot signal time course
 
-            self.axes.set_xlim(self.x_lim[0]*scale_fac, self.x_lim[1]*scale_fac)
-            y1 = min(min(y),0)
-            y2 = max(max(y),0)
+            self.axes.set_xlim(self.x_lim[0], self.x_lim[1])
+            y1 = scale_fac*min(min(y),0)
+            y2 = scale_fac*max(max(y),0)
             self.axes.set_ylim(y1, y2)
 
             ## convolve with Gaussian            
@@ -233,6 +233,10 @@ class AppForm(QMainWindow):
                 self.timer = QTimer(self)
                 self.connect(self.timer, SIGNAL("timeout()"), self.plot_gauss)
                 self.timer.start(10)
+
+            # plot again so it stays in display
+            if hasattr(self, 'y_conv_plot'):
+                self.axes.plot(self.x_conv,self.y_conv_plot)
             
             self.show_movie = 0
                     
@@ -302,17 +306,32 @@ class AppForm(QMainWindow):
         self.axes.plot(x_ori,filt_kern)
 
         # plot convolution up to current step
-        self.axes.plot(x_ori[from_idx:ss_idx],self.y_conv[from_idx:ss_idx])
+        self.x_conv = x_ori[from_idx:ss_idx] # keep for later plotting
+
+        self.y_conv_plot = self.y_conv[from_idx:ss_idx]
+        self.axes.plot(self.x_conv, self.y_conv_plot)
 
             
         # increase step, cancel loop when end reached        
         self.ss = self.ss + self.stepsize
         self.canvas.draw()
-        if self.step >= len(self.filt_kern)-1:
-            self.timer.stop()
-            self.show_movie = 0        
 
         self.step = self.step + 1
+
+        if self.step >= len(self.filt_kern)-1:
+            self.timer.stop()
+            self.show_movie = 0
+        
+
+    def on_edit(self):
+        """ refreshes display when editing of textboxes finished
+        """
+
+        if hasattr(self, 'y_conv_plot'):
+            delattr(self, 'y_conv_plot') # remove convolution from plot
+            delattr(self, 'x_conv')
+
+        self.on_draw()
 
 
     def on_movie(self):
@@ -324,7 +343,7 @@ class AppForm(QMainWindow):
             self.on_draw()
         else:
             self.timer.stop()
-            self.show_movie = 0        
+            self.show_movie = 0
 
 
     def on_add_func(self):
@@ -441,7 +460,7 @@ class AppForm(QMainWindow):
             self.slider_label = QLabel('Scaling:')
             self.slider_scale = QSlider(Qt.Horizontal)
             self.slider_scale.setRange(1, 1000)
-            self.slider_scale.setValue(10)
+            self.slider_scale.setValue(200)
             self.slider_scale.setTracking(True)
             # self.slider_scale.setTickPosition(QSlider.TicksBothSides)
             self.slider_scale.setTickPosition(QSlider.TicksBelow)
@@ -476,14 +495,14 @@ class AppForm(QMainWindow):
             self.functext = []
             
             # function text for signal time course
-            self.functext.append(QLineEdit("sin(x*2.*np.pi*F/SF)")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("box(-500,100)+box(500,100)")) # textbox for functions to be executed
             self.functext[0].setMinimumWidth(200)
-            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)
+            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_edit)
 
             # function text for filter kernel time course
-            self.functext.append(QLineEdit("exp(-x**2/(2*FWHM**2))")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed
             self.functext[1].setMinimumWidth(200)
-            self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_draw)
+            self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_edit)
 
             
         if not(hasattr(self, 'funcsliders')):

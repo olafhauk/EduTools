@@ -188,18 +188,21 @@ class AppForm(QMainWindow):
 
         # symmetrical x-range
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
-        x = x * self.slider_scale.value()/10. # scale x-axis with slider value
+        
         n = len(x) # for use in interactive displays
+
+        scale_fac = self.slider_scale.value()/500. # scale factor from slider value
 
         ## display VECTORS
         if self.display_option==0:
+
+            self.axes.grid(True)
 
             ## Vector Plot
             if self.data_mouse==[]:
                 self.data_mouse = [0,0,0.9,0]
             X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]
-            scale_fac = self.slider_scale.value() / 10.
-            X[0] = X[0] * scale_fac # rescale; mouse coordinates are already scaled
+            
             colours = ['k', 'r'] # arrow colours            
             for [x,c] in zip(X,colours):
                 if (x!=[]):                    
@@ -212,7 +215,7 @@ class AppForm(QMainWindow):
             # angle between vectors
             corr = np.dot(X[0],X[1]) / np.sqrt(np.dot(X[0],X[0])*np.dot(X[1],X[1]))
             angle = np.arccos( corr )
-            disp_text = "  %.2f rad / %.2f deg, r = %.2f" % (angle, 180*angle/np.pi, corr)
+            disp_text = "  %.2f rad / %.2f deg, r = %.3f" % (angle, 180*angle/np.pi, corr)
             self.axes.text(x=self.x_lim[0]*scale_fac,y=-0.9*self.x_lim[1]*scale_fac,s=disp_text)
             # myarc = matplotlib.patches.Arc(xy=(0,0), width=1, height=1, angle=180, theta1=0, theta2=360)
             # self.axes.add_patch(myarc)
@@ -230,7 +233,7 @@ class AppForm(QMainWindow):
             if len(text_lim)==1:
                 self.x_lim.append(1.)
             if len(text_lim)==2:
-                self.x_lim.append(0.01)
+                self.x_lim.append(0.01)            
 
             if hasattr(self, 'functext'):
                 legend = []
@@ -248,6 +251,7 @@ class AppForm(QMainWindow):
                         y = np.array( eval(txt_str) )
                         self.axes.plot(x,y,c=plot_colors[fi])
                         self.axes.set_xlim(x[0],x[-1])
+                        self.axes.set_ylim(scale_fac*np.min([0,y.min()]),scale_fac*y.max())
                         ylist.append(y)
                         legend.append(txt_str)
                 
@@ -376,8 +380,17 @@ class AppForm(QMainWindow):
             if ss==0:
                 regparam = 0
             else:
-                regparam = self.funcsliders[0].value()/100.
+                regparam = self.funcsliders[0].value()/500.
             print "Regularisation Parameter: %.2f" % (regparam)
+
+            # (inverse) SNR for sensor noise
+            noise_fac = self.funcsliders[1].value()
+            if noise_fac==0:
+                noise_fac = 0.
+                print "SNR (RMS): inf"
+            else:
+                noise_fac = self.funcsliders[1].value()/500.
+                print "SNR (RMS): %.2f" % (1 / noise_fac)
 
             # insert defaults where necessary
             if len(text_lim)==0:
@@ -433,6 +446,14 @@ class AppForm(QMainWindow):
                 # given signal:
                 txt_str = unicode(self.invprobtext[1].text())
                 y = src_sig.dot(my_source) # "leadfield times sources"
+
+                # add noise with specified SNR (RMS)
+                y_rms = np.sqrt( np.mean( y**2 ))
+                noise = randn(y.shape[0])
+                noise = noise - noise.mean()
+                n_rms = np.sqrt( np.mean( noise**2 ))
+                y = y + noise_fac*(y_rms/n_rms)*noise
+              
                 # compute signal at higher sampling for display                
                 x = x_ori
                 x_global = x
@@ -454,7 +475,7 @@ class AppForm(QMainWindow):
                 # residual variance (%)
                 resvar = 100 * sum((y-Xest)**2) / sum(y**2)
                 print "Residual Variance: %.2f" % (resvar)
-                self.progress.setValue(resvar)
+                self.progress.setValue(int(np.round(resvar)))
 
                 # plot given and estimated signal as bar graphs
                 ww = step_dat/3 # note: bars get left edge of bars
@@ -476,13 +497,16 @@ class AppForm(QMainWindow):
                         self.axes2.set_xlim(x_ori[0], x_ori[-1])
 
                 # for normalisation in plot
-                maxi = np.max( np.abs( np.column_stack([my_source,b]) ) )
+                maxi = np.max( np.column_stack([my_source,b]) )
+                mini = np.min( np.column_stack([my_source/maxi,b/maxi]) )
 
                 # plot parameter estimate distribution
                 self.axes2.bar(src_x,b/maxi,step_src)
 
                 # plot true (given) parameter distribution
                 self.axes2.plot(src_x,my_source/maxi,c='black')
+
+                self.axes2.set_ylim(scale_fac*-1.,scale_fac*1.1)
 
                 x = x_ori
 
@@ -677,7 +701,7 @@ class AppForm(QMainWindow):
             self.slider_label = QLabel('Scaling:')
             self.slider_scale = QSlider(Qt.Horizontal)
             self.slider_scale.setRange(1, 1000)
-            self.slider_scale.setValue(10)
+            self.slider_scale.setValue(500)
             self.slider_scale.setTracking(True)
             # self.slider_scale.setTickPosition(QSlider.TicksBothSides)
             self.slider_scale.setTickPosition(QSlider.TicksBelow)
@@ -710,7 +734,7 @@ class AppForm(QMainWindow):
             self.funclabels.append(QLabel('0:'))
 
             self.functext = []
-            self.functext.append(QLineEdit("np.exp(-10*x**2)")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
             self.functext[0].setMinimumWidth(200)
             self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)        
 
@@ -725,6 +749,7 @@ class AppForm(QMainWindow):
             hbox2.setAlignment(w, Qt.AlignVCenter)
 
             
+        # for regression and inverse problem, add two sliders
         if not(hasattr(self, 'funcsliders')):
             # regression sliders
             self.fslidelabels = []
@@ -733,12 +758,23 @@ class AppForm(QMainWindow):
             self.funcsliders = []
             self.funcsliders.append(QSlider(Qt.Horizontal))
             self.funcsliders[0].setRange(0, 1000)
-            self.funcsliders[0].setMinimumWidth(200)
+            self.funcsliders[0].setMinimumWidth(500)
             self.funcsliders[0].setValue(0)
             self.funcsliders[0].setTracking(True)
             self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
             self.funcsliders[0].setTickInterval(50)
             self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
+
+            self.fslidelabels.append(QLabel('1:'))
+
+            self.funcsliders.append(QSlider(Qt.Horizontal))
+            self.funcsliders[1].setRange(0, 1000)
+            self.funcsliders[1].setMinimumWidth(500)
+            self.funcsliders[1].setValue(0)
+            self.funcsliders[1].setTracking(True)
+            self.funcsliders[1].setTickPosition(QSlider.TicksBelow)
+            self.funcsliders[1].setTickInterval(50)
+            self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
         
         # add function sliders to box
         for aa in range(len(self.fslidelabels)):
@@ -749,8 +785,10 @@ class AppForm(QMainWindow):
             hbox3.addWidget(w)
             hbox3.setAlignment(w, Qt.AlignVCenter)
 
+        # For inverse problem, use slider for regparam and sensor noise
         if self.display_option == 3:
             self.fslidelabels[0].setText("Reg: ")
+            self.fslidelabels[1].setText("Noise: ")
 
         # CORRELATION text box        
         if not(hasattr(self, 'corrtext')):
@@ -784,12 +822,12 @@ class AppForm(QMainWindow):
 
             self.invprobtext = []
             # add two text boxes for source activity and signal to be fitted
-            self.invprobtext.append(QLineEdit("np.exp(-10*x**2)")) # textbox for functions to be executed
+            self.invprobtext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
             self.invprobtext[0].setMinimumWidth(200)
             self.connect(self.invprobtext[0], SIGNAL('editingFinished ()'), self.on_draw)
 
             self.invproblabels.append(QLabel('Src:'))
-            self.invprobtext.append(QLineEdit("sin(x*pi)")) # textbox for functions to be executed
+            self.invprobtext.append(QLineEdit("box(-0.5,0)+box(0.5,0)")) # textbox for functions to be executed
             self.invprobtext[1].setMinimumWidth(200)
             self.connect(self.invprobtext[1], SIGNAL('editingFinished ()'), self.on_draw)
 
