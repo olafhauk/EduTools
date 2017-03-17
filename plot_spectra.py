@@ -105,10 +105,8 @@ class AppForm(QMainWindow):
         print text
         if (text=='Filters'):
             self.display_option = 0
-        # elif (text=='Regression'):
-        #     self.display_option = 1
-        # elif (text=='Correlation'):
-        #     self.display_option = 2
+        elif (text=='Connectivity'):
+            self.display_option = 1
         
         self.create_main_frame()
         self.on_draw()
@@ -143,11 +141,28 @@ class AppForm(QMainWindow):
 
         # clear the axes and redraw the plot anew
         #
-        self.axes.clear()
-        self.axes.grid(True)
+        if self.display_option==0:
+            self.axes.clear()
+            self.axes.grid(True)
 
-        self.axes2.clear()
-        self.axes3.clear()
+            self.axes2.clear()
+            self.axes3.clear()
+        elif self.display_option==1:
+            for ax in self.trial_axes:
+                ax.clear()
+                ax.set_xlim([self.x_lim[0], self.x_lim[1]])
+                ax.grid(True, 'major')
+                ax.tick_params(axis='both', which='major', labelsize=6)
+
+            self.axes2.clear()
+            self.axes3.clear()
+
+        # get slider values for interactive display
+        S = []
+        if hasattr(self, 'funcsliders'):
+            for ss in self.funcsliders:
+                S.append(ss.value()/1000.)
+            S = np.array(S)
 
         str_txt = unicode(self.textbox_lim.text())
         # self.data = map(int, str.split())
@@ -161,7 +176,9 @@ class AppForm(QMainWindow):
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
         # x = x * scale_fac # scale x-axis with slider value
         n = len(x) # for use in interactive displays
-        x_global = x
+        
+        x_ori = x # keep because x may change locally
+        x_global = x # for use in functions (QTimer)
 
         ## display FILTERS
         if self.display_option==0:
@@ -192,7 +209,7 @@ class AppForm(QMainWindow):
 
             self.axes.set_xlim(self.x_lim[0], self.x_lim[1])
             y1 = scale_fac*min(min(y),0)
-            y2 = scale_fac*max(max(y),0)
+            y2 = scale_fac*max(max(y),0)*1.1
             self.axes.set_ylim(y1, y2)
 
             ## convolve with Gaussian            
@@ -226,13 +243,15 @@ class AppForm(QMainWindow):
 
             freqs = np.arange(0,len(psd_g)*(SF/n),SF/n)
 
-            self.axes3.plot(freqs, psd_g/max(psd_g))
+            pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
+
+            self.axes3.plot(freqs[pl_idx], psd_g[pl_idx]/max(psd_g))
             
             if self.show_movie==1:
                 # start timer to plot moving Gaussian kernels
                 self.timer = QTimer(self)
                 self.connect(self.timer, SIGNAL("timeout()"), self.plot_gauss)
-                self.timer.start(10)
+                self.timer.start(10)            
 
             # plot again so it stays in display
             if hasattr(self, 'y_conv_plot'):
@@ -247,12 +266,85 @@ class AppForm(QMainWindow):
             psd_y[1:-2] = 2*psd_y[1:-2]
 
             freqs = np.arange(0,len(psd_y)*(SF/n),SF/n)
+            pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
 
-            self.axes2.plot(freqs, psd_y/max(psd_y))
+            self.axes2.plot(freqs[pl_idx], psd_y[pl_idx]/max(psd_y))
 
             # compute and plot "filtered" spectrum
-            psd_gy = np.multiply(psd_y, psd_g)
-            self.axes2.plot(freqs, psd_gy/max(psd_gy))
+            psd_gy = np.multiply(psd_y, psd_g)            
+            self.axes2.plot(freqs[pl_idx], psd_gy[pl_idx]/max(psd_gy))
+
+        elif self.display_option==1: # Coherence
+
+            SF = 1000/self.x_lim[2] # sampling frequency
+            self.SF = SF
+            F = self.funcsliders[0].value() # frequency of signal
+
+            ## Signal time courses (samples, conditions, trials)
+            data = np.zeros([n,2,self.trials_n])
+            
+            # get text for signal formula
+            sig_str = unicode( self.functext[0].text() )
+
+            # get text for phase differences
+            phase_str = unicode( self.functext[1].text() )
+            
+            # create time courses per trial
+            # 2 signals per trial with time shift
+            for t in range(0,self.trials_n):
+                x = x_ori       
+                data[:,0,t] = np.array( eval(sig_str) )
+                x = x_ori + np.array( eval(phase_str) )
+                data[:,1,t] = np.array( eval(sig_str) )
+
+                pp = 2*t # plot window
+                self.trial_axes[pp].plot(x_ori,data[:,0,t],linewidth=0.5)
+                self.trial_axes[pp].plot(x_ori,data[:,1,t],linewidth=0.5)            
+
+            
+            data_fft = np.fft.fft(data,axis=0) # FFT along first axis
+            data_fft = data_fft[0:np.floor(n/2),:,:]
+            data_psd = np.abs(data_fft)**2 / (SF*n)
+            data_psd[1:-2] = 2*data_psd[1:-2]
+
+            mean_psd = np.mean(data_psd,axis=2) # over trials
+            mean_psd = np.mean(data_psd,axis=1) # over conditions
+            m_idx = np.argmax(mean_psd) # peak frequency for coherence
+
+            # (cross) spectral density between conditions
+            cross_1 = np.multiply(data_fft[:,0,:], data_fft[:,0,:].conj())
+            cross_2 = np.multiply(data_fft[:,1,:], data_fft[:,1,:].conj())
+            cross_12 = np.multiply(data_fft[:,0,:], data_fft[:,1,:].conj())
+
+            # Coherency
+            coh = np.divide(cross_12,np.sqrt(np.multiply(cross_1,cross_2)))
+
+            # magnitude squared coherence
+            coh2 = np.abs(coh)
+
+            freqs = np.arange(0,np.floor(n/2)*(SF/n),SF/n)
+            print "Maximum frequency: ", freqs[m_idx]
+            freqs = freqs / (freqs[-1]/2) # normalise because it'll be plotted with vectors
+            freqs = freqs - freqs[0] # centre around 0            
+
+            # real and imaginary parts of spectrum (normalised)
+            r_p = np.divide( np.real(data_fft), np.abs(data_fft) )
+            i_p = np.divide( np.imag(data_fft), np.abs(data_fft) )
+
+            for nn in range(0,self.trials_n):
+                pp = 2*nn + 1 # plot window
+                self.trial_axes[pp].plot(freqs,data_psd[:,0,nn],linewidth=0.5,c="lightgrey")
+                self.trial_axes[pp].plot(freqs,data_psd[:,1,nn],linewidth=0.5,c="lightgrey")
+
+                self.trial_axes[pp].arrow(0,0,r_p[m_idx,0,nn],i_p[m_idx,0,nn],fc="blue", ec="blue")
+                self.trial_axes[pp].arrow(0,0,r_p[m_idx,1,nn],i_p[m_idx,1,nn],fc="green",ec="green")
+
+                self.trial_axes[pp].arrow(0,0,np.real(coh[m_idx,nn]),np.imag(coh[m_idx,nn]),fc="black",ec="black")
+                
+                self.trial_axes[pp].set_xlim([-1.1,1.1])
+                self.trial_axes[pp].set_ylim([-1.1,1.1])
+
+
 
         # self.fig.tight_layout()
         self.canvas.draw()
@@ -406,10 +498,8 @@ class AppForm(QMainWindow):
         # configuration tool in the navigation toolbar wouldn't
         # work.
         #
-        if self.display_option==0:            
+        if self.display_option==0: # filter and convolution
             self.axes = self.fig.add_subplot(211)
-            self.axes.set_xlim([-1, 1])
-            self.axes.set_ylim([-1, 1])
             self.axes.grid(True, 'major')
             self.axes.tick_params(axis='both', which='major', labelsize=6)
 
@@ -421,6 +511,21 @@ class AppForm(QMainWindow):
             self.axes3.grid(True, 'major')
             self.axes3.tick_params(axis='both', which='major', labelsize=6)
             self.axes3.set_title("Kernel Spectrum", {'fontsize': 6})
+        elif self.display_option==1: # Coherence
+            self.trials_n = 5 # number of simulated signal trials
+            self.trial_axes = []
+            for nn in range(0,self.trials_n):
+                # axes for signals and polar representations
+                self.trial_axes.append( self.fig.add_subplot(self.trials_n, 3, 3*nn+1) )
+                self.trial_axes.append( self.fig.add_subplot(self.trials_n, 3, 3*nn+2) )
+
+            self.axes2 = self.fig.add_subplot(233)                        
+            self.axes2.tick_params(axis='both', which='major', labelsize=6)            
+
+            self.axes3 = self.fig.add_subplot(236)
+            self.axes3.grid(True, 'major')
+            self.axes3.tick_params(axis='both', which='major', labelsize=6)
+            # self.axes3.set_title("Kernel Spectrum", {'fontsize': 6})
         
         # Create the navigation toolbar, tied to the canvas
         #
@@ -451,7 +556,8 @@ class AppForm(QMainWindow):
         # Menu box for display options (Filters, etc.)
         if not(hasattr(self, 'comboBox')):
             self.comboBox = QComboBox(self)
-            self.comboBox.addItem("Filters")            
+            self.comboBox.addItem("Filters")
+            self.comboBox.addItem("Connectivity")
 
             self.comboBox.activated[str].connect(self.display_method)       
 
@@ -495,14 +601,19 @@ class AppForm(QMainWindow):
             self.functext = []
             
             # function text for signal time course
-            self.functext.append(QLineEdit("box(-500,100)+box(500,100)")) # textbox for functions to be executed
+            # self.functext.append(QLineEdit("box(-500,100)+box(500,100)")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("sin(2*pi*x*5/SF)")) # textbox for functions to be executed
             self.functext[0].setMinimumWidth(200)
             self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_edit)
 
             # function text for filter kernel time course
-            self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed            
             self.functext[1].setMinimumWidth(200)
             self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_edit)
+
+        # for coherence
+        if self.display_option==1:
+            self.functext[1].setText("50")
 
             
         if not(hasattr(self, 'funcsliders')):

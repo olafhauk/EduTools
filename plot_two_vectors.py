@@ -369,6 +369,8 @@ class AppForm(QMainWindow):
             # x-axis locations of "sources"
             step_src = (x_ori[-1]-x_ori[0])/(n_src-1)
             src_x = np.arange(x_ori[0],x[-1]+step_src,step_src)
+            n_src = src_x.shape[0]
+
             # x-axis locations where data will be sampled
             step_dat = (x_ori[-1]-x_ori[0])/(n_dat-1)
             dat_x = np.arange(x[0],x[-1]+step_dat,step_dat)            
@@ -491,10 +493,12 @@ class AppForm(QMainWindow):
                 b = b  # for display
 
                 # plot some kernels
-                for [xsi,xs] in enumerate(src_x):
-                    if np.mod(xsi,20)==0:
-                        self.axes2.plot(x_ori,b[xsi]*src_act[xsi]/np.max(b),c='lightgrey',linestyle='--', linewidth=0.5)
-                        self.axes2.set_xlim(x_ori[0], x_ori[-1])
+                n = len(src_act)
+                idx = [np.ceil(n/4), np.ceil(n/2), np.ceil(0.75*n)]
+                idx = [int(ii) for ii in idx]                
+                for ii in idx:                    
+                    self.axes2.plot(x_ori,src_act[ii]/np.max(src_act[ii]),c='lightgrey',linestyle='--', linewidth=0.5)
+                    self.axes2.set_xlim(x_ori[0], x_ori[-1])
 
                 # for normalisation in plot
                 maxi = np.max( np.column_stack([my_source,b]) )
