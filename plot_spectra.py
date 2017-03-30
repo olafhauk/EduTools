@@ -25,6 +25,8 @@ from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+from wavelets_mne import * # e.g. morelet, cwt
+
 from time import sleep
 
 print "!!!"
@@ -36,6 +38,7 @@ plot_colors = ['b', 'g', 'r', 'c', 'm', 'k', 'w']
 # global variables
 global x_global
 x_global = [] # keep track of x-axis for plotting etc.
+global sfreq # sampling frequency
 
 def box(p=0, w=0):
     # draw a box car function
@@ -73,6 +76,28 @@ def box(p=0, w=0):
     return y
 
 
+def morlet(freq, x=x_global, n_cycles=7, sigma=None, zero_mean=False):
+    # run morlet wavelet with global variables
+    # calls my_morlet from wavelets_mne.py
+    # freq: float, frequency (Hz)
+    # x: array, x values
+    # note: the shift on x-axis determined by comparing x with x_global 
+    # clunky, but necessary for consistency in interactive text functions
+    # returns: array, wavelet
+    global sfreq # sample frequency
+    global x_global # original x values
+
+    x_ori = np.array(x_global)
+
+    # desired shift of wavelet along x-axis
+    x_shift = x_ori[0] - x[0]
+
+    W = my_morlet(sfreq, freq, x_shift, x_global, n_cycles=n_cycles, sigma=sigma, zero_mean=zero_mean)
+
+    return W
+            
+
+
 class AppForm(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
@@ -107,6 +132,8 @@ class AppForm(QMainWindow):
             self.display_option = 0
         elif (text=='Connectivity'):
             self.display_option = 1
+        elif (text=='TimeFrequency'):
+            self.display_option = 2
         
         self.create_main_frame()
         self.on_draw()
@@ -136,6 +163,7 @@ class AppForm(QMainWindow):
         """ Redraws the figure
         """
         global x_global # x-axis for plotting
+        global sfreq # sampling frequency
       
         # x = range(len(self.data))
 
@@ -146,7 +174,7 @@ class AppForm(QMainWindow):
             self.axes.grid(True)
 
             self.axes2.clear()
-            self.axes3.clear()
+            # self.axes3.clear()
         elif self.display_option==1:
             for ax in self.trial_axes:
                 ax.clear()
@@ -169,16 +197,21 @@ class AppForm(QMainWindow):
         text_lim = map(float, str_txt.split())
         self.x_lim = text_lim
 
-        # scaling of x-axis from slider
+        # scaling of from slider
         scale_fac = self.slider_scale.value() / 200.
+        self.scale_fac = scale_fac
 
         # symmetrical x-range
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
         # x = x * scale_fac # scale x-axis with slider value
         n = len(x) # for use in interactive displays
+
+        # current sampling frequency (Hz)
+        sfreq = 1000./(x[1]-x[0]) # global
+        self.sfreq = sfreq
         
         x_ori = x # keep because x may change locally
-        x_global = x # for use in functions (QTimer)
+        x_global = x # global, for use in functions (QTimer)
 
         ## display FILTERS
         if self.display_option==0:
@@ -188,7 +221,6 @@ class AppForm(QMainWindow):
             F = self.funcsliders[0].value() # frequency of signal
 
             FWHM = self.funcsliders[1].value() # width of Gaussian filter kernel (ms)
-            print("FWHM: %f" % (FWHM))
             n_steps = 50 # number of steps for convolution with filter kernel
             step_min = x[30] # where to start/stop convoluting
             step_max = x[-30]
@@ -200,19 +232,10 @@ class AppForm(QMainWindow):
             y[x==0] = 1
 
             txt_str = unicode( self.functext[0].text() )
-            if txt_str == '':
-                y = np.sin(x*2.*np.pi*F/SF)
-            else:
-                y = np.array( eval(txt_str) )
+            
+            y = np.array( eval(txt_str) )
 
-            self.axes.plot(x,y) # plot signal time course
-
-            self.axes.set_xlim(self.x_lim[0], self.x_lim[1])
-            y1 = scale_fac*min(min(y),0)
-            y2 = scale_fac*max(max(y),0)*1.1
-            self.axes.set_ylim(y1, y2)
-
-            ## convolve with Gaussian            
+            self.axes.plot(x,y) # plot signal time course            
 
             self.x = x
             self.y = y
@@ -226,14 +249,12 @@ class AppForm(QMainWindow):
             # compute and plot filter kernel
             txt_str = unicode( self.functext[1].text() )
 
-            if txt_str == '':
-                filt_kern = np.exp(-x**2/(2*FWHM**2)) # filter kernel
-                filt_kern = SF*filt_kern / np.sum(filt_kern) # normalise kernel to unit area
-            else:
-                filt_kern = np.array( eval(txt_str) )
+            filt_kern = np.array( eval(txt_str) )
                 
             y_max = np.max(y)
-            self.axes.plot(x,y_max*filt_kern/np.max(filt_kern))
+            filt_kern = y_max*filt_kern/np.max(filt_kern)
+
+            self.axes.plot(x,filt_kern)
 
             # Plot Gaussian kernel frequency spectrum
             fft_g = np.fft.fft(filt_kern)
@@ -245,19 +266,50 @@ class AppForm(QMainWindow):
 
             pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
 
-            self.axes3.plot(freqs[pl_idx], psd_g[pl_idx]/max(psd_g))
+            # self.axes3.plot(freqs[pl_idx], psd_g[pl_idx]/max(psd_g))
             
             if self.show_movie==1:
+
+                # pre-compute convolution values for all x-values
+                # before going into movie loop
+                
+                self.y_conv = [] # convolution time series
+                self.filt_kern = [] # moving filter kernels at different time points
+                
+                x_ori = self.x
+
+                # compute one "original" kernel that will be shifted around
+                filt_kern = np.array( eval(txt_str) )
+                filt_kern = filt_kern / np.sum(np.abs(filt_kern)) # normalise kernel to unit area
+
+                # for interactive use, x will vary in the following
+                print "Convoluting..."
+                for xx in x_ori:
+                    if np.mod(xx,100)==0:
+                        print xx
+
+                    kern_shift = shift_kernel(filt_kern, x_ori, xx, sfreq)
+
+                    self.y_conv.append(y.dot(kern_shift))
+
+                    # keep filter kernels at step points                
+                    samp_dist = 1000./self.SF # sample distance (ms)
+                    if np.min(np.abs(self.steps-xx)) < samp_dist/2.: # a hack to find step points
+                        self.filt_kern.append(kern_shift)
+
+                x = x_ori # back to normal
+
+
                 # start timer to plot moving Gaussian kernels
                 self.timer = QTimer(self)
-                self.connect(self.timer, SIGNAL("timeout()"), self.plot_gauss)
-                self.timer.start(10)            
+                self.connect(self.timer, SIGNAL("timeout()"), self.plot_kernel)
+                self.timer.start(10)
 
-            # plot again so it stays in display
-            if hasattr(self, 'y_conv_plot'):
-                self.axes.plot(self.x_conv,self.y_conv_plot)
-            
-            self.show_movie = 0
+                # plot again so it stays in display
+                if hasattr(self, 'y_conv_plot'):
+                    self.axes.plot(self.x_conv,self.y_conv_plot)
+                
+                self.show_movie = 0
                     
             # Plot signal frequency spectrum
             fft_y = np.fft.fft(y)
@@ -268,11 +320,17 @@ class AppForm(QMainWindow):
             freqs = np.arange(0,len(psd_y)*(SF/n),SF/n)
             pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
 
-            self.axes2.plot(freqs[pl_idx], psd_y[pl_idx]/max(psd_y))
+            self.axes2.plot(freqs[pl_idx], psd_y[pl_idx]/max(psd_y), c=plot_colors[0])
 
             # compute and plot "filtered" spectrum
             psd_gy = np.multiply(psd_y, psd_g)            
-            self.axes2.plot(freqs[pl_idx], psd_gy[pl_idx]/max(psd_gy))
+            self.axes2.plot(freqs[pl_idx], psd_gy[pl_idx]/max(psd_gy), c=plot_colors[1])
+
+            self.axes.set_xlim(self.x_lim[0], self.x_lim[1])            
+
+            y1 = scale_fac*min(np.r_[y,filt_kern,0])*1.05
+            y2 = scale_fac*max(np.r_[y,filt_kern,0])*1.05
+            self.axes.set_ylim(y1, y2)
 
         elif self.display_option==1: # Coherence
 
@@ -344,13 +402,61 @@ class AppForm(QMainWindow):
                 self.trial_axes[pp].set_xlim([-1.1,1.1])
                 self.trial_axes[pp].set_ylim([-1.1,1.1])
 
+        elif self.display_option==2: # Time-Frequency
 
+            x = np.linspace(0,2000,2000)
+            n = x.shape[0]
+
+            data = np.zeros([1,n])
+            # data[0,np.round(n/2)] = 1 # peak
+            f = 100
+            # data[0,] = np.sin(x*2*np.pi*f/1000)
+            data[0,] = np.sin((x**2/10)*2*np.pi/1000)
+
+            freqs = np.arange(5,500,1)
+            n_f = len(freqs)
+
+            n_cycles = np.zeros(n_f)
+            n_cycles[freqs<=5] = 2
+            n_cycles[(freqs>5) & (freqs<=20)] = 3
+            n_cycles[freqs>20] = 7
+
+            Ws = morlet_mne(sfreq=1000., freqs=freqs, n_cycles=n_cycles, zero_mean=True)
+            
+            # plot some wavelets
+            n_plot = 3 # how many example wavelets to plot
+            f_p = int(np.floor(n_f/3.)) # up to which frequency to plot wavelets
+            s_d = x[1]-x[0] # sample distance
+            legend = [] # figure legend for frequencies
+            # plot up to third of max frequency, otherwise too small
+            for ii in range(0,f_p,f_p/n_plot):
+                W = Ws[np.round(ii)]
+                n_w = len(W) # to be symmetrical around zero
+                width = (n_w-1)*s_d
+                x_w = np.linspace(-width/2,+width/2,n_w)                
+                legend.append("%.2fHz" % freqs[ii])
+                self.axes.plot(x_w, np.real(W), linewidth=0.2, c=plot_colors[len(legend)-1])
+            self.axes.legend(legend, loc=2, prop={'size': 4})
+
+            out = cwt(data, Ws)
+            
+            self.axes2.imshow(np.abs(out[0,:,:]), aspect='auto') 
 
         # self.fig.tight_layout()
         self.canvas.draw()
 
 
-    def plot_gauss(self):
+    def plot_kernel(self):
+        # plot kernel for convolution movie
+        global x_global
+        global sfreq
+
+        # leave loop if end of steps reached
+        if self.step > len(self.steps)-1:
+            self.show_movie = 0
+            self.timer.stop()
+            return
+        
         self.axes.clear()
 
         # variables available to external text function
@@ -366,27 +472,27 @@ class AppForm(QMainWindow):
         # compute and plot filter kernel
         txt_str = unicode( self.functext[1].text() )
 
-        # compute convolution values for all x-values (but only plot up to current step)
-        if self.step == 0:
+        # # compute convolution values for all x-values (but only plot up to current step)
+        # if self.step == 0:
 
-            self.y_conv = [] # convolution time series
-            self.filt_kern = [] # moving filter kernels at different time points
+        #     self.y_conv = [] # convolution time series
+        #     self.filt_kern = [] # moving filter kernels at different time points
             
-            for xx in x_ori:
-                x = x_ori - xx # move kernel along x-axis
-                if txt_str == '':
-                    filt_kern = np.exp(-x**2/(2*FWHM**2)) # filter kernel            
-                else:
-                    filt_kern = np.array( eval(txt_str) )
+        #     for xx in x_ori:
+        #         x = x_ori - xx # move kernel along x-axis
+        #         if txt_str == '':
+        #             filt_kern = np.exp(-x**2/(2*FWHM**2)) # filter kernel            
+        #         else:
+        #             filt_kern = np.array( eval(txt_str) )
 
-                filt_kern = filt_kern / np.sum(filt_kern) # normalise kernel to unit area
+        #         filt_kern = filt_kern / np.sum(filt_kern) # normalise kernel to unit area
 
-                self.y_conv.append(y.dot(filt_kern))
+        #         self.y_conv.append(y.dot(filt_kern))
 
-                # keep filter kernels at step points                
-                samp_dist = 1000./self.SF # sample distance (ms)
-                if np.min(np.abs(steps-xx)) < samp_dist/2.: # a hack to find step points
-                    self.filt_kern.append(filt_kern)
+        #         # keep filter kernels at step points                
+        #         samp_dist = 1000./self.SF # sample distance (ms)
+        #         if np.min(np.abs(steps-xx)) < samp_dist/2.: # a hack to find step points
+        #             self.filt_kern.append(filt_kern)
                 
         ss_idx = np.argmin(np.abs(x_ori-ss)) # index up to which to plot
         from_idx = np.argmin(np.abs(x_ori-self.steps[0])) # index from which to plot convolution
@@ -397,12 +503,17 @@ class AppForm(QMainWindow):
         # plot current filter kernel
         self.axes.plot(x_ori,filt_kern)
 
+        self.axes.set_xlim(self.x_lim[0], self.x_lim[1])            
+
+        y1 = self.scale_fac*min(np.r_[y,filt_kern,0])*1.05
+        y2 = self.scale_fac*max(np.r_[y,filt_kern,0])*1.05
+        self.axes.set_ylim(y1, y2)
+
         # plot convolution up to current step
         self.x_conv = x_ori[from_idx:ss_idx] # keep for later plotting
 
         self.y_conv_plot = self.y_conv[from_idx:ss_idx]
-        self.axes.plot(self.x_conv, self.y_conv_plot)
-
+        self.axes.plot(self.x_conv, self.y_conv_plot)        
             
         # increase step, cancel loop when end reached        
         self.ss = self.ss + self.stepsize
@@ -410,11 +521,7 @@ class AppForm(QMainWindow):
 
         self.step = self.step + 1
 
-        if self.step >= len(self.filt_kern)-1:
-            self.timer.stop()
-            self.show_movie = 0
         
-
     def on_edit(self):
         """ refreshes display when editing of textboxes finished
         """
@@ -503,14 +610,14 @@ class AppForm(QMainWindow):
             self.axes.grid(True, 'major')
             self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-            self.axes2 = self.fig.add_subplot(223)                        
+            self.axes2 = self.fig.add_subplot(212)                        
             # self.axes2.grid(True, 'major')
             self.axes2.tick_params(axis='both', which='major', labelsize=6)            
 
-            self.axes3 = self.fig.add_subplot(224)
-            self.axes3.grid(True, 'major')
-            self.axes3.tick_params(axis='both', which='major', labelsize=6)
-            self.axes3.set_title("Kernel Spectrum", {'fontsize': 6})
+            # self.axes3 = self.fig.add_subplot(224)
+            # self.axes3.grid(True, 'major')
+            # self.axes3.tick_params(axis='both', which='major', labelsize=6)
+            # self.axes3.set_title("Kernel Spectrum", {'fontsize': 6})
         elif self.display_option==1: # Coherence
             self.trials_n = 5 # number of simulated signal trials
             self.trial_axes = []
@@ -525,7 +632,14 @@ class AppForm(QMainWindow):
             self.axes3 = self.fig.add_subplot(236)
             self.axes3.grid(True, 'major')
             self.axes3.tick_params(axis='both', which='major', labelsize=6)
-            # self.axes3.set_title("Kernel Spectrum", {'fontsize': 6})
+        elif self.display_option==2: # Time-Frequency
+
+            self.axes = self.fig.add_subplot(211)
+            self.axes.tick_params(axis='both', which='major', labelsize=6)
+
+            self.axes2 = self.fig.add_subplot(212)
+            self.axes2.tick_params(axis='both', which='major', labelsize=6)
+
         
         # Create the navigation toolbar, tied to the canvas
         #
@@ -540,7 +654,7 @@ class AppForm(QMainWindow):
         ## Text for x-axis limits (min, max, step)
         if not(hasattr(self, 'textbox_lim')):            
             self.textbox_lim = QLineEdit()
-            self.textbox_lim.setText('-1000 1000 1') # x-axis scale of signal time course in ms
+            self.textbox_lim.setText('-1000 1000 2') # x-axis scale of signal time course in ms
             self.textbox_lim.setMinimumWidth(200)
             self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)        
         
@@ -558,6 +672,7 @@ class AppForm(QMainWindow):
             self.comboBox = QComboBox(self)
             self.comboBox.addItem("Filters")
             self.comboBox.addItem("Connectivity")
+            self.comboBox.addItem("TimeFrequency")
 
             self.comboBox.activated[str].connect(self.display_method)       
 
@@ -602,12 +717,14 @@ class AppForm(QMainWindow):
             
             # function text for signal time course
             # self.functext.append(QLineEdit("box(-500,100)+box(500,100)")) # textbox for functions to be executed
-            self.functext.append(QLineEdit("sin(2*pi*x*5/SF)")) # textbox for functions to be executed
+            # self.functext.append(QLineEdit("sin(2*pi*x*5/SF)")) # textbox for functions to be executed
+            self.functext.append(QLineEdit("box(0,50)"))
             self.functext[0].setMinimumWidth(200)
             self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_edit)
 
             # function text for filter kernel time course
-            self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed            
+            # self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed            
+            self.functext.append(QLineEdit("morlet(10,x)"))
             self.functext[1].setMinimumWidth(200)
             self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_edit)
 
