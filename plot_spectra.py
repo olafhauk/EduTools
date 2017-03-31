@@ -12,11 +12,14 @@ from PyQt4.QtGui import *
 
 import numpy as np
 # for use in text functions
-from numpy import sin,sinh,cos,cosh,tan,tanh,exp,exp2,expm1,arcsin,arcsinh,arccos,arccosh,arctan,arctanh,arctan2,pi
+from numpy import sin,sinh,cos,cosh,tan,tanh,exp,exp2,expm1,arcsin,arcsinh,arccos,arccosh
+from numpy import arctan,arctanh,arctan2,pi
+from numpy import arange
 # note: pi is now np.pi, don't use as index of p
 from numpy.random import * # for use in interactive displays
 
 import scipy.linalg
+from scipy.fftpack import fft
 
 import matplotlib
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
@@ -181,16 +184,9 @@ class AppForm(QMainWindow):
                 ax.set_xlim([self.x_lim[0], self.x_lim[1]])
                 ax.grid(True, 'major')
                 ax.tick_params(axis='both', which='major', labelsize=6)
-
-            self.axes2.clear()
-            self.axes3.clear()
-
-        # get slider values for interactive display
-        S = []
-        if hasattr(self, 'funcsliders'):
-            for ss in self.funcsliders:
-                S.append(ss.value()/1000.)
-            S = np.array(S)
+        elif self.display_option==2:
+            self.axes.clear()
+            self.axes2.clear()        
 
         str_txt = unicode(self.textbox_lim.text())
         # self.data = map(int, str.split())
@@ -207,20 +203,31 @@ class AppForm(QMainWindow):
         n = len(x) # for use in interactive displays
 
         # current sampling frequency (Hz)
-        sfreq = 1000./(x[1]-x[0]) # global
+        sfreq = 1000./self.x_lim[2] # global
         self.sfreq = sfreq
+        SF = sfreq # sampling rate, for interactive text
         
         x_ori = x # keep because x may change locally
         x_global = x # global, for use in functions (QTimer)
 
         ## display FILTERS
-        if self.display_option==0:
+        opt = self.display_option
 
-            SF = 1000/self.x_lim[2] # sampling frequency
-            self.SF = SF
+        if opt==0:
+
+            # get slider values for interactive display
+            S = []
+            for ss in self.funcsliders:
+                S.append(ss.value()/1000.)
+            S = np.array(S)
+
             F = self.funcsliders[0].value() # frequency of signal
+            print "Frequency: %.2f: " % F
 
-            FWHM = self.funcsliders[1].value() # width of Gaussian filter kernel (ms)
+            W = self.funcsliders[1].value()*10. # FWHM variable for interactive text
+            self.FWHM = W # for use in functions (historically FWHM)
+            print "Width: %.2f: " % W
+
             n_steps = 50 # number of steps for convolution with filter kernel
             step_min = x[30] # where to start/stop convoluting
             step_max = x[-30]
@@ -231,7 +238,7 @@ class AppForm(QMainWindow):
             y = np.zeros([n,1])
             y[x==0] = 1
 
-            txt_str = unicode( self.functext[0].text() )
+            txt_str = unicode( self.functext[opt][0].text() )
             
             y = np.array( eval(txt_str) )
 
@@ -239,7 +246,6 @@ class AppForm(QMainWindow):
 
             self.x = x
             self.y = y
-            self.FWHM = FWHM
             self.ss = self.steps[0]
             self.stepsize = self.steps[1]-self.steps[0]
             self.step = 0 # count steps in convolution movie
@@ -247,7 +253,7 @@ class AppForm(QMainWindow):
 
             # FFT of Gauss kernel
             # compute and plot filter kernel
-            txt_str = unicode( self.functext[1].text() )
+            txt_str = unicode( self.functext[opt][1].text() )
 
             filt_kern = np.array( eval(txt_str) )
                 
@@ -256,13 +262,13 @@ class AppForm(QMainWindow):
 
             self.axes.plot(x,filt_kern)
 
-            # Plot Gaussian kernel frequency spectrum
-            fft_g = np.fft.fft(filt_kern)
-            fft_g2 = fft_g[0:int(np.floor(n/2))]
-            psd_g = np.abs(fft_g2)**2 / (SF*n)
-            psd_g[1:-2] = 2*psd_g[1:-2]
+            # Plot filter kernel frequency spectrum
+            fft_k = fft(filt_kern)
+            fft_k2 = fft_k[0:int(np.floor(n/2))]
+            psd_k = np.abs(fft_k2)**2 / (sfreq*n)
+            psd_k[1:-2] = 2*psd_k[1:-2]
 
-            freqs = np.arange(0,len(psd_g)*(SF/n),SF/n)
+            freqs = np.arange(0,len(psd_k)*(sfreq/n),sfreq/n)
 
             pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
 
@@ -293,7 +299,7 @@ class AppForm(QMainWindow):
                     self.y_conv.append(y.dot(kern_shift))
 
                     # keep filter kernels at step points                
-                    samp_dist = 1000./self.SF # sample distance (ms)
+                    samp_dist = 1000./self.sfreq # sample distance (ms)
                     if np.min(np.abs(self.steps-xx)) < samp_dist/2.: # a hack to find step points
                         self.filt_kern.append(kern_shift)
 
@@ -312,19 +318,18 @@ class AppForm(QMainWindow):
                 self.show_movie = 0
                     
             # Plot signal frequency spectrum
-            fft_y = np.fft.fft(y)
+            fft_y = fft(y)
             fft_y2 = fft_y[0:int(np.floor(n/2))]
-            psd_y = np.abs(fft_y2)**2 / (SF*n)
+            psd_y = np.abs(fft_y2)**2 / (sfreq*n)
             psd_y[1:-2] = 2*psd_y[1:-2]
 
-            freqs = np.arange(0,len(psd_y)*(SF/n),SF/n)
+            freqs = np.arange(0,len(psd_y)*(sfreq/n),sfreq/n)
             pl_idx = np.arange(0,freqs.shape[0]/4)  # how much to plot
 
             self.axes2.plot(freqs[pl_idx], psd_y[pl_idx]/max(psd_y), c=plot_colors[0])
 
-            # compute and plot "filtered" spectrum
-            psd_gy = np.multiply(psd_y, psd_g)            
-            self.axes2.plot(freqs[pl_idx], psd_gy[pl_idx]/max(psd_gy), c=plot_colors[1])
+            # plot kernel FFT spectrum
+            self.axes2.plot(freqs[pl_idx], psd_k[pl_idx]/max(psd_k), c=plot_colors[1])
 
             self.axes.set_xlim(self.x_lim[0], self.x_lim[1])            
 
@@ -332,20 +337,26 @@ class AppForm(QMainWindow):
             y2 = scale_fac*max(np.r_[y,filt_kern,0])*1.05
             self.axes.set_ylim(y1, y2)
 
-        elif self.display_option==1: # Coherence
+        if opt==1: # Connectivity
 
-            SF = 1000/self.x_lim[2] # sampling frequency
-            self.SF = SF
+            # get slider values for interactive display
+            S = []
+            for ss in self.funcsliders:
+                S.append(ss.value()/1000.)
+            S = np.array(S)
+
+            sfreq = 1000/self.x_lim[2] # sampling frequency
+            self.sfreq = sfreq
             F = self.funcsliders[0].value() # frequency of signal
 
             ## Signal time courses (samples, conditions, trials)
             data = np.zeros([n,2,self.trials_n])
             
             # get text for signal formula
-            sig_str = unicode( self.functext[0].text() )
+            sig_str = unicode( self.functext[opt][0].text() )
 
             # get text for phase differences
-            phase_str = unicode( self.functext[1].text() )
+            phase_str = unicode( self.functext[opt][1].text() )
             
             # create time courses per trial
             # 2 signals per trial with time shift
@@ -360,9 +371,9 @@ class AppForm(QMainWindow):
                 self.trial_axes[pp].plot(x_ori,data[:,1,t],linewidth=0.5)            
 
             
-            data_fft = np.fft.fft(data,axis=0) # FFT along first axis
+            data_fft = fft(data,axis=0) # FFT along first axis
             data_fft = data_fft[0:np.floor(n/2),:,:]
-            data_psd = np.abs(data_fft)**2 / (SF*n)
+            data_psd = np.abs(data_fft)**2 / (sfreq*n)
             data_psd[1:-2] = 2*data_psd[1:-2]
 
             mean_psd = np.mean(data_psd,axis=2) # over trials
@@ -380,7 +391,7 @@ class AppForm(QMainWindow):
             # magnitude squared coherence
             coh2 = np.abs(coh)
 
-            freqs = np.arange(0,np.floor(n/2)*(SF/n),SF/n)
+            freqs = np.arange(0,np.floor(n/2)*(sfreq/n),sfreq/n)
             print "Maximum frequency: ", freqs[m_idx]
             freqs = freqs / (freqs[-1]/2) # normalise because it'll be plotted with vectors
             freqs = freqs - freqs[0] # centre around 0            
@@ -402,32 +413,44 @@ class AppForm(QMainWindow):
                 self.trial_axes[pp].set_xlim([-1.1,1.1])
                 self.trial_axes[pp].set_ylim([-1.1,1.1])
 
-        elif self.display_option==2: # Time-Frequency
+        if opt==2: # Time-Frequency
 
-            x = np.linspace(0,2000,2000)
-            n = x.shape[0]
+            # get slider values for interactive display
+            S = []
+            for ss in self.funcsliders:
+                S.append(ss.value())
+            S = np.array(S)
+            S[1] = S[1]*10. # used for Fmax in TF plot
+
+            F = self.funcsliders[0].value() # frequency for signal
+
+            # get text for wavelet frequencies
+            freqs_str = unicode( self.functext[opt][1].text() )
+
+            freqs = np.array( eval(freqs_str) )
+            n_f = len(freqs)
+
+            # get signal for wavelet analysis
+            sig_str = unicode( self.functext[opt][0].text() )
 
             data = np.zeros([1,n])
-            # data[0,np.round(n/2)] = 1 # peak
-            f = 100
-            # data[0,] = np.sin(x*2*np.pi*f/1000)
-            data[0,] = np.sin((x**2/10)*2*np.pi/1000)
+            data[0,:] = np.array( eval(sig_str) )
 
-            freqs = np.arange(5,500,1)
-            n_f = len(freqs)
+            # Plot signal
+            self.axes.plot(x, data[0,:], linewidth=1, c='black')
 
             n_cycles = np.zeros(n_f)
             n_cycles[freqs<=5] = 2
             n_cycles[(freqs>5) & (freqs<=20)] = 3
             n_cycles[freqs>20] = 7
 
-            Ws = morlet_mne(sfreq=1000., freqs=freqs, n_cycles=n_cycles, zero_mean=True)
+            Ws = morlet_mne(sfreq=sfreq, freqs=freqs, n_cycles=n_cycles, zero_mean=True)
             
             # plot some wavelets
             n_plot = 3 # how many example wavelets to plot
             f_p = int(np.floor(n_f/3.)) # up to which frequency to plot wavelets
             s_d = x[1]-x[0] # sample distance
-            legend = [] # figure legend for frequencies
+            legend = ['signal'] # figure legend for frequencies, first line is signal
             # plot up to third of max frequency, otherwise too small
             for ii in range(0,f_p,f_p/n_plot):
                 W = Ws[np.round(ii)]
@@ -435,12 +458,13 @@ class AppForm(QMainWindow):
                 width = (n_w-1)*s_d
                 x_w = np.linspace(-width/2,+width/2,n_w)                
                 legend.append("%.2fHz" % freqs[ii])
-                self.axes.plot(x_w, np.real(W), linewidth=0.2, c=plot_colors[len(legend)-1])
+                self.axes.plot(x_w, np.real(W), linewidth=0.4, c=plot_colors[len(legend)-1])
             self.axes.legend(legend, loc=2, prop={'size': 4})
 
             out = cwt(data, Ws)
             
-            self.axes2.imshow(np.abs(out[0,:,:]), aspect='auto') 
+            self.axes2.imshow(np.abs(out[0,:,:]), aspect='auto', extent=[x[0],x[-1], freqs[0],freqs[-1]],
+                                origin='lower')
 
         # self.fig.tight_layout()
         self.canvas.draw()
@@ -704,53 +728,101 @@ class AppForm(QMainWindow):
             hbox1.addWidget(w)
             hbox1.setAlignment(w, Qt.AlignVCenter)
 
-        ## initialise or add TEXT BOXES
+        ## initialise or add TEXT BOXES       
         
-        # REGRESSION text and slider boxes
-        if not(hasattr(self, 'functext')):            
+        options = [0,1,2] # number of display option        
 
-            self.funclabels = []
-            self.funclabels.append(QLabel('Signal:'))
-            self.funclabels.append(QLabel('Kernel:'))
-
+        if not(hasattr(self, 'functext')): # at the very beginning
             self.functext = []
-            
-            # function text for signal time course
-            # self.functext.append(QLineEdit("box(-500,100)+box(500,100)")) # textbox for functions to be executed
-            # self.functext.append(QLineEdit("sin(2*pi*x*5/SF)")) # textbox for functions to be executed
-            self.functext.append(QLineEdit("box(0,50)"))
-            self.functext[0].setMinimumWidth(200)
-            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_edit)
+            self.funclabels = []
+            [self.functext.append([]) for ii in options] # text boxes for functions of different options
+            [self.funclabels.append([]) for ii in options] # correponding display labels
+ 
+        # If text specified, keep it
+        # apparently widgets get deleted by their parents
+        if self.functext[0]==[]:
+            txt0 = "box(0,W)"
+            txt1 = "morlet(F, x)"
+        else:
+            txt0 = self.functext[0][0].text()
+            txt1 = self.functext[0][1].text()
 
-            # function text for filter kernel time course
-            # self.functext.append(QLineEdit("exp(-x**2/(10*FWHM**2))")) # textbox for functions to be executed            
-            self.functext.append(QLineEdit("morlet(10,x)"))
-            self.functext[1].setMinimumWidth(200)
-            self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_edit)
+        self.functext[0] = []
+        self.functext[0].append(QLineEdit(txt0))
+        self.functext[0].append(QLineEdit(txt1))
 
-        # for coherence
-        if self.display_option==1:
-            self.functext[1].setText("50")
+        self.functext[0][0].setMinimumWidth(200)
+        self.connect(self.functext[0][0], SIGNAL('editingFinished ()'), self.on_edit)
+        self.functext[0][1].setMinimumWidth(200)
+        self.connect(self.functext[0][1], SIGNAL('editingFinished ()'), self.on_edit)
+
+        self.funclabels[0] = []
+        self.funclabels[0].append(QLabel('Signal:'))
+        self.funclabels[0].append(QLabel('Kernel:'))
+
+        
+        if self.functext[1]==[]:
+            txt0 = "sin(2*pi*20*x)"
+            txt1 = "50"
+        else:
+            txt0 = self.functext[1][0].text()
+            txt1 = self.functext[1][1].text()
+
+        self.functext[1] = []
+        self.functext[1].append(QLineEdit(txt0))
+        self.functext[1].append(QLineEdit(txt1))
+
+        self.functext[1][0].setMinimumWidth(200)
+        self.connect(self.functext[1][1], SIGNAL('editingFinished ()'), self.on_edit)
+        self.functext[1][1].setMinimumWidth(200)
+        self.connect(self.functext[1][1], SIGNAL('editingFinished ()'), self.on_edit)
+
+        self.funclabels[1] = []
+        self.funclabels[1].append(QLabel('Signal:'))
+        self.funclabels[1].append(QLabel('Freqs:'))            
+
+
+        if self.functext[2]==[]:
+            txt0 = "sin(2*pi*(F/SF)*x)"
+            txt1 = "arange(5,400,2)"
+        else:
+            txt0 = self.functext[2][0].text()
+            txt1 = self.functext[2][1].text()
+
+        self.functext[2] = []
+        self.functext[2].append(QLineEdit(txt0))
+        self.functext[2].append(QLineEdit(txt1))
+
+        self.functext[2][0].setMinimumWidth(200)
+        self.connect(self.functext[2][0], SIGNAL('editingFinished ()'), self.on_edit)
+        self.functext[2][1].setMinimumWidth(200)
+        self.connect(self.functext[2][1], SIGNAL('editingFinished ()'), self.on_edit)
+
+        self.funclabels[2] = []
+        self.funclabels[2].append(QLabel('Signal:'))
+        self.funclabels[2].append(QLabel('Freqs:'))
 
             
         if not(hasattr(self, 'funcsliders')):
-            # regression sliders
+            # sliders
             self.fslidelabels = []
-            self.fslidelabels.append(QLabel('Freq:'))
-            self.fslidelabels.append(QLabel('FWHM:'))
+            self.fslidelabels.append(QLabel('')) # will be specified below
+
+            # add one additional slider
+            self.fslidelabels.append(QLabel('S1:'))
 
             self.funcsliders = []
-            # Slider for signal frequency
+            # Slider
             self.funcsliders.append(QSlider(Qt.Horizontal))
             self.funcsliders[0].setRange(0, 100)
             self.funcsliders[0].setMinimumWidth(200)
-            self.funcsliders[0].setValue(20)
+            self.funcsliders[0].setValue(10)
             self.funcsliders[0].setTracking(True)
             self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
             self.funcsliders[0].setTickInterval(50)
             self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
 
-            # Slider for Gaussian filter kernel FWHM
+            # Slider
             self.funcsliders.append(QSlider(Qt.Horizontal))
             self.funcsliders[1].setRange(1, 50)
             self.funcsliders[1].setMinimumWidth(200)
@@ -760,14 +832,23 @@ class AppForm(QMainWindow):
             self.funcsliders[1].setTickInterval(50)
             self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
 
-        # add function text boxes to box
-        for aa in range(len(self.functext)):
-            w = self.funclabels[aa]
-            hbox2.addWidget(w)
+        if self.display_option==0:
+            self.fslidelabels[0].setText('F:')
+        else:
+            self.fslidelabels[0].setText('W:')
 
-            w = self.functext[aa]
-            hbox2.addWidget(w)
-            hbox2.setAlignment(w, Qt.AlignVCenter)
+        # add function text boxes to box
+        opt = self.display_option # current display option       
+
+        functext = self.functext[opt] # text box and label for current option
+        funclabels = self.funclabels[opt]        
+        
+        for [fi,ff] in enumerate(functext): # labels and text boxes            
+            w = self.funclabels[opt][fi]
+            hbox2.addWidget(w) # add label text
+            
+            hbox2.addWidget(ff) # add corresponding text box
+            hbox2.setAlignment(ff, Qt.AlignVCenter)
         
         # add function sliders to box
         for aa in range(len(self.fslidelabels)):
