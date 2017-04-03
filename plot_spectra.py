@@ -26,6 +26,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 #from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from wavelets_mne import * # e.g. morelet, cwt
@@ -179,6 +180,7 @@ class AppForm(QMainWindow):
             self.axes2.clear()
             # self.axes3.clear()
         elif self.display_option==1:
+            self.axes2.clear()
             for ax in self.trial_axes:
                 ax.clear()
                 ax.set_xlim([self.x_lim[0], self.x_lim[1]])
@@ -221,10 +223,10 @@ class AppForm(QMainWindow):
                 S.append(ss.value()/1000.)
             S = np.array(S)
 
-            F = self.funcsliders[0].value() # frequency of signal
+            F = self.funcsliders[1].value() # frequency of signal
             print "Frequency: %.2f: " % F
 
-            W = self.funcsliders[1].value()*10. # FWHM variable for interactive text
+            W = self.funcsliders[0].value()*10. # FWHM variable for interactive text
             self.FWHM = W # for use in functions (historically FWHM)
             print "Width: %.2f: " % W
 
@@ -345,9 +347,12 @@ class AppForm(QMainWindow):
                 S.append(ss.value()/1000.)
             S = np.array(S)
 
-            sfreq = 1000/self.x_lim[2] # sampling frequency
-            self.sfreq = sfreq
-            F = self.funcsliders[0].value() # frequency of signal
+            F = self.funcsliders[0].value() / 10. # frequency of signal
+
+            print "Frequency: %.2f" % F
+
+            # Noise
+            N = 3*self.funcsliders[1].value() # noise for signal delay
 
             ## Signal time courses (samples, conditions, trials)
             data = np.zeros([n,2,self.trials_n])
@@ -360,24 +365,30 @@ class AppForm(QMainWindow):
             
             # create time courses per trial
             # 2 signals per trial with time shift
+            delay_x = [] # delays (ms) across trials
             for t in range(0,self.trials_n):
                 x = x_ori       
                 data[:,0,t] = np.array( eval(sig_str) )
-                x = x_ori + np.array( eval(phase_str) )
+
+                 # add delay with noise to data (N controlled by slider)
+                delay_x.append(np.array( eval(phase_str) ) + N*np.random.randn())
+                x = x_ori + np.array( eval(phase_str) ) + delay_x[-1]
                 data[:,1,t] = np.array( eval(sig_str) )
 
                 pp = 2*t # plot window
                 self.trial_axes[pp].plot(x_ori,data[:,0,t],linewidth=0.5)
-                self.trial_axes[pp].plot(x_ori,data[:,1,t],linewidth=0.5)            
+                self.trial_axes[pp].plot(x_ori,data[:,1,t],linewidth=0.5)
+
+            print "Mean/Std delay (ms): %.f / %.f" % (np.mean(delay_x), np.std(delay_x))
 
             
             data_fft = fft(data,axis=0) # FFT along first axis
             data_fft = data_fft[0:np.floor(n/2),:,:]
             data_psd = np.abs(data_fft)**2 / (sfreq*n)
-            data_psd[1:-2] = 2*data_psd[1:-2]
+            data_psd[1:-2,:,:] = 2*data_psd[1:-2,:,:]
 
             mean_psd = np.mean(data_psd,axis=2) # over trials
-            mean_psd = np.mean(data_psd,axis=1) # over conditions
+            mean_psd = np.mean(mean_psd,axis=1) # over conditions
             m_idx = np.argmax(mean_psd) # peak frequency for coherence
 
             # (cross) spectral density between conditions
@@ -391,27 +402,49 @@ class AppForm(QMainWindow):
             # magnitude squared coherence
             coh2 = np.abs(coh)
 
-            freqs = np.arange(0,np.floor(n/2)*(sfreq/n),sfreq/n)
+            freqs = np.linspace(0,np.floor(sfreq/2.),np.round(n/2.))
             print "Maximum frequency: ", freqs[m_idx]
             freqs = freqs / (freqs[-1]/2) # normalise because it'll be plotted with vectors
-            freqs = freqs - freqs[0] # centre around 0            
+            freqs = freqs - freqs[0] # centre around 0
 
             # real and imaginary parts of spectrum (normalised)
             r_p = np.divide( np.real(data_fft), np.abs(data_fft) )
             i_p = np.divide( np.imag(data_fft), np.abs(data_fft) )
 
+            # mean coherency at peak frequency across trials
+            mean_coh = coh[m_idx,:].mean()
+
+            R = [] # for lagend plotting
+            legend_txt = [] # legend for trials in summary plot
             for nn in range(0,self.trials_n):
                 pp = 2*nn + 1 # plot window
+
+                # plot into separate sub-plots across trials
                 self.trial_axes[pp].plot(freqs,data_psd[:,0,nn],linewidth=0.5,c="lightgrey")
                 self.trial_axes[pp].plot(freqs,data_psd[:,1,nn],linewidth=0.5,c="lightgrey")
 
-                self.trial_axes[pp].arrow(0,0,r_p[m_idx,0,nn],i_p[m_idx,0,nn],fc="blue", ec="blue")
-                self.trial_axes[pp].arrow(0,0,r_p[m_idx,1,nn],i_p[m_idx,1,nn],fc="green",ec="green")
+                self.trial_axes[pp].arrow(0,0,r_p[m_idx,0,nn],i_p[m_idx,0,nn],fc="blue", ec="blue", linewidth=0.5)
+                self.trial_axes[pp].arrow(0,0,r_p[m_idx,1,nn],i_p[m_idx,1,nn],fc="green",ec="green", linewidth=0.5)
 
+                # plot coherency in trial
                 self.trial_axes[pp].arrow(0,0,np.real(coh[m_idx,nn]),np.imag(coh[m_idx,nn]),fc="black",ec="black")
                 
                 self.trial_axes[pp].set_xlim([-1.1,1.1])
                 self.trial_axes[pp].set_ylim([-1.1,1.1])
+
+                # plot coherencies across trials and mean into one window
+                c = plot_colors[nn]
+                self.axes2.arrow(0,0,np.real(coh[m_idx,nn]),np.imag(coh[m_idx,nn]),linewidth=0.5,fc=c,ec=c)
+                                
+                R.append(Rectangle((0,0), 1, 1, fc=c)) # dummy for legend plotting (legend doesn't work for arrow())
+                legend_txt.append("%d" % (nn+1)) # start at 1
+            
+            # plot mean coherency across trials
+            self.axes2.arrow(0,0,np.real(mean_coh),np.imag(mean_coh),fc="black",ec="black",linewidth=2)
+            self.axes2.set_xlim([-1.1,1.1])
+            self.axes2.set_ylim([-1.1,1.1])
+            self.axes2.legend(R,legend_txt,prop={'size': 3})
+
 
         if opt==2: # Time-Frequency
 
@@ -444,6 +477,7 @@ class AppForm(QMainWindow):
             n_cycles[(freqs>5) & (freqs<=20)] = 3
             n_cycles[freqs>20] = 7
 
+            print sfreq
             Ws = morlet_mne(sfreq=sfreq, freqs=freqs, n_cycles=n_cycles, zero_mean=True)
             
             # plot some wavelets
@@ -494,7 +528,8 @@ class AppForm(QMainWindow):
         self.axes.plot(self.x,y)
 
         # compute and plot filter kernel
-        txt_str = unicode( self.functext[1].text() )
+        opt = self.display_option
+        txt_str = unicode( self.functext[opt][1].text() )
 
         # # compute convolution values for all x-values (but only plot up to current step)
         # if self.step == 0:
@@ -650,12 +685,10 @@ class AppForm(QMainWindow):
                 self.trial_axes.append( self.fig.add_subplot(self.trials_n, 3, 3*nn+1) )
                 self.trial_axes.append( self.fig.add_subplot(self.trials_n, 3, 3*nn+2) )
 
-            self.axes2 = self.fig.add_subplot(233)                        
+            self.axes2 = self.fig.add_subplot(233)
+            self.axes2.grid(True, 'major')
             self.axes2.tick_params(axis='both', which='major', labelsize=6)            
-
-            self.axes3 = self.fig.add_subplot(236)
-            self.axes3.grid(True, 'major')
-            self.axes3.tick_params(axis='both', which='major', labelsize=6)
+            
         elif self.display_option==2: # Time-Frequency
 
             self.axes = self.fig.add_subplot(211)
@@ -678,7 +711,7 @@ class AppForm(QMainWindow):
         ## Text for x-axis limits (min, max, step)
         if not(hasattr(self, 'textbox_lim')):            
             self.textbox_lim = QLineEdit()
-            self.textbox_lim.setText('-1000 1000 2') # x-axis scale of signal time course in ms
+            self.textbox_lim.setText('-1000 1000 5') # x-axis scale of signal time course in ms
             self.textbox_lim.setMinimumWidth(200)
             self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)        
         
@@ -728,6 +761,37 @@ class AppForm(QMainWindow):
             hbox1.addWidget(w)
             hbox1.setAlignment(w, Qt.AlignVCenter)
 
+
+        if not(hasattr(self, 'funcsliders')):
+            # sliders
+            self.fslidelabels = []
+            self.fslidelabels.append(QLabel('S0')) # will be specified below
+
+            # add one additional slider
+            self.fslidelabels.append(QLabel('S1:'))
+
+            self.funcsliders = []
+            # Slider
+            self.funcsliders.append(QSlider(Qt.Horizontal))
+            self.funcsliders[0].setRange(0, 100)
+            self.funcsliders[0].setMinimumWidth(200)
+            self.funcsliders[0].setValue(10)
+            self.funcsliders[0].setTracking(True)
+            self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
+            self.funcsliders[0].setTickInterval(50)
+            self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
+
+            # Slider
+            self.funcsliders.append(QSlider(Qt.Horizontal))
+            self.funcsliders[1].setRange(0, 100)
+            self.funcsliders[1].setMinimumWidth(200)
+            self.funcsliders[1].setValue(20)
+            self.funcsliders[1].setTracking(True)
+            self.funcsliders[1].setTickPosition(QSlider.TicksBelow)
+            self.funcsliders[1].setTickInterval(50)
+            self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
+
+
         ## initialise or add TEXT BOXES       
         
         options = [0,1,2] # number of display option        
@@ -762,7 +826,7 @@ class AppForm(QMainWindow):
 
         
         if self.functext[1]==[]:
-            txt0 = "sin(2*pi*20*x)"
+            txt0 = "sin(2*pi*(F/1000.)*x)"
             txt1 = "50"
         else:
             txt0 = self.functext[1][0].text()
@@ -779,12 +843,12 @@ class AppForm(QMainWindow):
 
         self.funclabels[1] = []
         self.funclabels[1].append(QLabel('Signal:'))
-        self.funclabels[1].append(QLabel('Freqs:'))            
+        self.funclabels[1].append(QLabel('Delay (ms):'))            
 
 
         if self.functext[2]==[]:
-            txt0 = "sin(2*pi*(F/SF)*x)"
-            txt1 = "arange(5,400,2)"
+            txt0 = "sin(2*pi*(F/1000.)*x)"
+            txt1 = "arange(5,100,2)"
         else:
             txt0 = self.functext[2][0].text()
             txt1 = self.functext[2][1].text()
@@ -803,39 +867,19 @@ class AppForm(QMainWindow):
         self.funclabels[2].append(QLabel('Freqs:'))
 
             
-        if not(hasattr(self, 'funcsliders')):
-            # sliders
-            self.fslidelabels = []
-            self.fslidelabels.append(QLabel('')) # will be specified below
+        if self.display_option==0: # Filter
+            self.fslidelabels[0].setText('Width (W):')
+            self.fslidelabels[1].setText('Freq (F):')
+        elif self.display_option==1: # Connectivity
+            self.fslidelabels[0].setText('Freq (F):')
+            self.fslidelabels[1].setText('Noise (N):')
+            self.funcsliders[0].setValue(20)
+            self.funcsliders[1].setValue(0)
 
-            # add one additional slider
-            self.fslidelabels.append(QLabel('S1:'))
+        elif self.display_option==2:
+            self.fslidelabels[0].setText('Freq (F):')
+            self.fslidelabels[1].setText('S[1]:')
 
-            self.funcsliders = []
-            # Slider
-            self.funcsliders.append(QSlider(Qt.Horizontal))
-            self.funcsliders[0].setRange(0, 100)
-            self.funcsliders[0].setMinimumWidth(200)
-            self.funcsliders[0].setValue(10)
-            self.funcsliders[0].setTracking(True)
-            self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
-            self.funcsliders[0].setTickInterval(50)
-            self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
-
-            # Slider
-            self.funcsliders.append(QSlider(Qt.Horizontal))
-            self.funcsliders[1].setRange(1, 50)
-            self.funcsliders[1].setMinimumWidth(200)
-            self.funcsliders[1].setValue(20)
-            self.funcsliders[1].setTracking(True)
-            self.funcsliders[1].setTickPosition(QSlider.TicksBelow)
-            self.funcsliders[1].setTickInterval(50)
-            self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
-
-        if self.display_option==0:
-            self.fslidelabels[0].setText('F:')
-        else:
-            self.fslidelabels[0].setText('W:')
 
         # add function text boxes to box
         opt = self.display_option # current display option       
