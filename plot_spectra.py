@@ -371,8 +371,8 @@ class AppForm(QMainWindow):
                 data[:,0,t] = np.array( eval(sig_str) )
 
                  # add delay with noise to data (N controlled by slider)
-                delay_x.append(np.array( eval(phase_str) ) + N*np.random.randn())
-                x = x_ori + np.array( eval(phase_str) ) + delay_x[-1]
+                delay_x.append(np.float( phase_str ) + N*np.random.randn())
+                x = x_ori + delay_x[-1]
                 data[:,1,t] = np.array( eval(sig_str) )
 
                 pp = 2*t # plot window
@@ -383,7 +383,7 @@ class AppForm(QMainWindow):
 
             
             data_fft = fft(data,axis=0) # FFT along first axis
-            data_fft = data_fft[0:np.floor(n/2),:,:]
+            data_fft = data_fft[0:int(np.floor(n/2.)),:,:]
             data_psd = np.abs(data_fft)**2 / (sfreq*n)
             data_psd[1:-2,:,:] = 2*data_psd[1:-2,:,:]
 
@@ -402,7 +402,7 @@ class AppForm(QMainWindow):
             # magnitude squared coherence
             coh2 = np.abs(coh)
 
-            freqs = np.linspace(0,np.floor(sfreq/2.),np.round(n/2.))
+            freqs = np.linspace(0,int(np.floor(sfreq/2.)),int(np.round(n/2.)))
             print "Maximum frequency: ", freqs[m_idx]
             freqs = freqs / (freqs[-1]/2) # normalise because it'll be plotted with vectors
             freqs = freqs - freqs[0] # centre around 0
