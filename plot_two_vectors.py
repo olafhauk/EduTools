@@ -188,335 +188,326 @@ class AppForm(QMainWindow):
 
         # symmetrical x-range
         x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # x-axis for plots
+        self.x = x
         
         n = len(x) # for use in interactive displays
 
-        scale_fac = self.slider_scale.value()/500. # scale factor from slider value
+        self.scale_fac = self.slider_scale.value()/500. # scale factor from slider value
 
         ## display VECTORS
         if self.display_option==0:
 
-            self.axes.grid(True)
-
-            ## Vector Plot
-            if self.data_mouse==[]:
-                self.data_mouse = [0,0,0.9,0]
-            X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]
-            
-            colours = ['k', 'r'] # arrow colours            
-            for [x,c] in zip(X,colours):
-                if (x!=[]):                    
-                    # self.axes.arrow(x[0], x[1], x[2], x[3], head_width=0.05, head_length=0.1, fc=c, ec=c)
-                    self.axes.arrow(x[0], x[1], x[2], x[3], fc=c, ec=c)
-                    self.axes.set_xlim(self.x_lim[0]*scale_fac, self.x_lim[1]*scale_fac)
-                    self.axes.set_ylim(self.x_lim[0]*scale_fac, self.x_lim[1]*scale_fac)
-            self.X = X[0] # keep reference vector
-                    
-            # angle between vectors
-            corr = np.dot(X[0],X[1]) / np.sqrt(np.dot(X[0],X[0])*np.dot(X[1],X[1]))
-            angle = np.arccos( corr )
-            disp_text = "  %.2f rad / %.2f deg, r = %.3f" % (angle, 180*angle/np.pi, corr)
-            self.axes.text(x=self.x_lim[0]*scale_fac,y=-0.9*self.x_lim[1]*scale_fac,s=disp_text)
-            # myarc = matplotlib.patches.Arc(xy=(0,0), width=1, height=1, angle=180, theta1=0, theta2=360)
-            # self.axes.add_patch(myarc)
-            print "Correlation", corr
-            print "Angle: ", angle, " rad; ", 180*angle/np.pi, " deg"
+            self.draw_vectors()
                 
         ## display REGRESSION
         elif self.display_option==1: # regression option chosen
             # textbox 2 (function execution)
             # textbox 1
-            
-            # insert defaults where necessary
-            if len(text_lim)==0:
-                self.x_lim.append(-1.)
-            if len(text_lim)==1:
-                self.x_lim.append(1.)
-            if len(text_lim)==2:
-                self.x_lim.append(0.01)            
-
-            if hasattr(self, 'functext'):
-                legend = []
-                ylist = [] # list of results
-
-                # get slider values for use in interactive display
-                S = []
-                for ss in self.funcsliders:
-                    S.append(ss.value()/1000.)
-                S = np.array(S)
-
-                for [fi,ff] in enumerate(self.functext):
-                    txt_str = unicode(ff.text())
-                    if (txt_str != ''):
-                        y = np.array( eval(txt_str) )
-                        self.axes.plot(x,y,c=plot_colors[fi])
-                        self.axes.set_xlim(x[0],x[-1])
-                        self.axes.set_ylim(scale_fac*np.min([0,y.min()]),scale_fac*y.max())
-                        ylist.append(y)
-                        legend.append(txt_str)
-                
-                if len(ylist)>1:
-                    ymat = np.array(ylist)
-                    corrmat = np.corrcoef(ymat) # correlation matrix                    
-                    covmat = np.cov(ymat) # covariance matrix
-
-                    # correlation or covariance to display
-                    if self.display_covcorr==0:
-                        disp_mat = corrmat
-                        axes2_title = 'Correlation'
-                    else:
-                        disp_mat = covmat
-                        axes2_title = 'Covariance'
-                    
-                    nr, nc = corrmat.shape
-                    extent = [-0.5, nc-0.5, nr-0.5, -0.5]
-                    self.h_imshow = self.axes2.imshow(disp_mat, extent=extent, origin='upper',
-                                                         interpolation='nearest', vmin=-1, vmax=1)                    
-
-                    self.axes2.set_xlim(extent[0], extent[1])
-                    self.axes2.set_ylim(extent[2], extent[3])
-                    self.axes2.xaxis.set_ticks(np.arange(0,nc,1))
-                    self.axes2.yaxis.set_ticks(np.arange(0,nr,1))
-                    self.axes2.set_title(axes2_title, {'fontsize': 6})
-
-                    # add colorbar
-                    divider2 = make_axes_locatable(self.axes2)
-                    cax2 = divider2.append_axes("right", size="20%", pad=0.05)
-                    cb = self.fig.colorbar(self.h_imshow, cax=cax2)
-                    cb.ax.tick_params(labelsize=6)
-                    ### CHANGE: updating colorbar doesn't seem to work
-                    cb.vmin = disp_mat.min()
-                    cb.vmax = disp_mat.max()                    
-
-                    # Fit Regression, explain first function by other functions
-                    X = ymat[1:,:].T
-                    pinvX = scipy.linalg.pinv(X)
-                    b = pinvX.dot(ymat[0,:].T)
-                    ye = X.dot(b)
-                    self.axes.plot(x,ye,c='k',linestyle='--')
-
-                    # plot parameter estimates
-                    nb = len(b)
-                    b_x = np.arange(0,nb) + .6 # start at 1, because 0 is predicted variable
-                    self.h_bar = self.axes3.bar(b_x,b,.8)
-                    self.axes3.set_xlim(0.3, b_x[-1]+1.2)
-                    self.axes3.xaxis.set_ticks(np.arange(1,nb+1,1))
-
-                    legend.append('Pred')
-                    self.axes.legend(legend, loc=2, prop={'size': 6})
+            self.draw_regression()
 
         ## display CORRELATION
         elif self.display_option==2:
-            if len(text_lim)==0:
-                self.x_lim.append(-1.)
-            if len(text_lim)==1:
-                self.x_lim.append(1.)
-            if len(text_lim)==2:
-                self.x_lim.append(0.1)
+            self.draw_correlation()
+            
+        ## display INVERSE PROBLEM
+        elif self.display_option==3:
+            self.draw_invprob()            
 
-            # get slider values for interactive display
+        self.fig.tight_layout()
+        self.canvas.draw()
+
+
+    ### Functions for ON_DRAW()
+    def draw_vectors(self):
+        self.axes.grid(True)
+
+        ## Vector Plot
+        if self.data_mouse==[]:
+            self.data_mouse = [0,0,0.9,0]
+        X = [ np.array([0,0,0,0.9]), np.array(self.data_mouse) ]
+        
+        colours = ['k', 'r'] # arrow colours            
+        for [x,c] in zip(X,colours):
+            if (x!=[]):                    
+                # self.axes.arrow(x[0], x[1], x[2], x[3], head_width=0.05, head_length=0.1, fc=c, ec=c)
+                self.axes.arrow(x[0], x[1], x[2], x[3], fc=c, ec=c)
+                self.axes.set_xlim(self.x_lim[0]*self.scale_fac, self.x_lim[1]*self.scale_fac)
+                self.axes.set_ylim(self.x_lim[0]*self.scale_fac, self.x_lim[1]*self.scale_fac)
+        self.X = X[0] # keep reference vector
+                
+        # angle between vectors
+        corr = np.dot(X[0],X[1]) / np.sqrt(np.dot(X[0],X[0])*np.dot(X[1],X[1]))
+        angle = np.arccos( corr )
+        disp_text = "  %.2f rad / %.2f deg, r = %.3f" % (angle, 180*angle/np.pi, corr)
+        self.axes.text(x=self.x_lim[0]*self.scale_fac,y=-0.9*self.x_lim[1]*self.scale_fac,s=disp_text)
+        # myarc = matplotlib.patches.Arc(xy=(0,0), width=1, height=1, angle=180, theta1=0, theta2=360)
+        # self.axes.add_patch(myarc)
+        print "Correlation", corr
+        print "Angle: ", angle, " rad; ", 180*angle/np.pi, " deg"
+
+    
+    def draw_regression(self):
+        if hasattr(self, 'functext'):
+            legend = []
+            ylist = [] # list of results
+
+            # get slider values for use in interactive display
             S = []
             for ss in self.funcsliders:
                 S.append(ss.value()/1000.)
             S = np.array(S)
 
-            # symmetrical x-/y-ranges
-            x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 1
-            y = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 2
+            for [fi,ff] in enumerate(self.functext):
+                txt_str = unicode(ff.text())
+                if (txt_str != ''):
+                    x = self.x
+                    y = np.array( eval(txt_str) )
+                    self.axes.plot(x,y,c=plot_colors[fi])
+                    self.axes.set_xlim(x[0],x[-1])
+                    self.axes.set_ylim(self.scale_fac*np.min([0,y.min()]),self.scale_fac*y.max())
+                    ylist.append(y)
+                    legend.append(txt_str)
+            
+            if len(ylist)>1:
+                ymat = np.array(ylist)
+                corrmat = np.corrcoef(ymat) # correlation matrix                    
+                covmat = np.cov(ymat) # covariance matrix
 
-            x = x * self.slider_scale.value()/10. # scale x-axis with slider value
-            y = y * self.slider_scale.value()/10. # scale x-axis with slider value
-
-            n = len(x) # for use in interactive display
-
-            text_list = [] # text strings to evaluate as functions for scatter plots
-            if (hasattr(self, 'corrtext')):
-                for ff in self.corrtext:
-                    if len(ff.text())>0:
-                        text_list.append( '[' + unicode(ff.text()) + ']' )
-                    else:
-                        text_list.append('[x,y]')
-
-                legend = []
-                zlist = [] # list of results
-                for [ti,tt] in enumerate(text_list):
-                    if not(tt==[]):
-                        z = np.array( eval(tt) )
-                        zlist.append(y)                        
-                        self.axes.scatter(z[0,], z[1,], marker='x', s=10, c=plot_colors[ti])
-                        cov = np.dot(z[0,],z[1,])
-                        corr = np.corrcoef(z[0,], z[1,])
-                        legend.append( "%s %.2f %.2f" % (tt, corr[0,1], cov) )
-
-                min_x, max_x = np.min(z[0,]), np.max(z[0,])
-                min_y, max_y = np.min(z[1,]), np.max(z[1,])
-                    
-                self.axes.set_xlim(min_x, max_x)
-                self.axes.set_ylim(min_y, max_y)                
-
-                self.axes.legend(legend, loc=2, prop={'size': 4})
-
-        ## display INVERSE PROBLEM
-        elif self.display_option==3:
-
-            self.axes2.clear()
-
-            n_src = 101 # number of sources
-            n_dat = int(np.ceil((n_src-1)/10)) # number of sensors/signals
-
-            x_ori = x # keep x values, variable x will be changed because of interactive functions            
-
-            # x-axis locations of "sources"
-            step_src = (x_ori[-1]-x_ori[0])/(n_src-1)
-            src_x = np.arange(x_ori[0],x[-1]+step_src,step_src)
-            n_src = src_x.shape[0]
-
-            # x-axis locations where data will be sampled
-            step_dat = (x_ori[-1]-x_ori[0])/(n_dat-1)
-            dat_x = np.arange(x[0],x[-1]+step_dat,step_dat)            
-
-            src_sig = np.zeros([n_dat,n_src]) # "leadfield", data produced by sources
-
-            # regularisation parameter, fraction of matrix traces
-            ss = self.funcsliders[0].value()
-            if ss==0:
-                regparam = 0
-            else:
-                regparam = self.funcsliders[0].value()/500.
-            print "Regularisation Parameter: %.2f" % (regparam)
-
-            # (inverse) SNR for sensor noise
-            noise_fac = self.funcsliders[1].value()
-            if noise_fac==0:
-                noise_fac = 0.
-                print "SNR (RMS): inf"
-            else:
-                noise_fac = self.funcsliders[1].value()/500.
-                print "SNR (RMS): %.2f" % (1 / noise_fac)
-
-            # insert defaults where necessary
-            if len(text_lim)==0:
-                self.x_lim.append(-1.)
-            if len(text_lim)==1:
-                self.x_lim.append(1.)
-            if len(text_lim)==2:
-                self.x_lim.append(0.01)
-
-            if hasattr(self, 'functext'):
-                legend = []
-                ylist = [] # list of results
-
-                # get slider values for use in interactive display
-                S = []
-                for ss in self.funcsliders:
-                    S.append(ss.value()/1000.)
-                S = np.array(S)                
-
-                # function for source kernels
-                txt_str = unicode(self.invprobtext[0].text())
-
-                n = len(x) # for use in interactive text
-                x_global = src_x # to use box() etc.                
-
-                src_act = [] # list with source activities
-                signal = np.zeros([len(dat_x),1]) # signals at sensor points
-                for [xsi,xs] in enumerate(src_x):
-
-                    for [xdi,xd] in enumerate(dat_x):
-                        x = xd - xs # distance between source and sensor
-                        x_global = x
-                        n = 1
-                        self.prec = step_src / 2 # in case box car function wanted per value
-                        src_sig[xdi,xsi] = np.array( eval(txt_str) ) # "leadfield"
-                        signal[xdi] = signal[xdi] + src_sig[xdi,xsi] # measured signal
-
-                    x = x_ori - xs
-                    x_global = x
-                    n = len(x)
-                    src_act.append( np.array( eval(txt_str) ) ) ### CHANGE: duplicates src_sig?
-
-                # fit source to given signal
-                x = src_x
-                x_global = x # to use box() etc.
-                n = len(x) # for use in interactive text
-
-                # source activity given by user
-                # function for source kernels
-                txt_str = unicode(self.invprobtext[1].text())
-                my_source = np.array( eval(txt_str) )
-
-                # given signal:
-                txt_str = unicode(self.invprobtext[1].text())
-                y = src_sig.dot(my_source) # "leadfield times sources"
-
-                # add noise with specified SNR (RMS)
-                y_rms = np.sqrt( np.mean( y**2 ))
-                noise = randn(y.shape[0])
-                noise = noise - noise.mean()
-                n_rms = np.sqrt( np.mean( noise**2 ))
-                y = y + noise_fac*(y_rms/n_rms)*noise
-              
-                # compute signal at higher sampling for display                
-                x = x_ori
-                x_global = x
-                n = len(x) # for use in interactive text
-                y_xori = np.array( eval(txt_str) )
-
-                X = src_sig # source activities as columns
-                # Tikhonov on foot:
-                Xgram = X.dot(X.T)
-                Xgramtrace = np.trace(Xgram)
-                Xreg = np.eye(Xgram.shape[0]) * (Xgramtrace/n_dat) * regparam # identity matrix adjusted trace
-                Xreginv = scipy.linalg.pinv(Xgram+Xreg)
-                pinvX = X.T.dot(Xreginv)
+                # correlation or covariance to display
+                if self.display_covcorr==0:
+                    disp_mat = corrmat
+                    axes2_title = 'Correlation'
+                else:
+                    disp_mat = covmat
+                    axes2_title = 'Covariance'
                 
-                b = pinvX.dot(y) # parameter estimates
+                nr, nc = corrmat.shape
+                extent = [-0.5, nc-0.5, nr-0.5, -0.5]
+                self.h_imshow = self.axes2.imshow(disp_mat, extent=extent, origin='upper',
+                                                     interpolation='nearest', vmin=-1, vmax=1)                    
 
-                Xest = X.dot(b) # estimated signal
+                self.axes2.set_xlim(extent[0], extent[1])
+                self.axes2.set_ylim(extent[2], extent[3])
+                self.axes2.xaxis.set_ticks(np.arange(0,nc,1))
+                self.axes2.yaxis.set_ticks(np.arange(0,nr,1))
+                self.axes2.set_title(axes2_title, {'fontsize': 6})
 
-                # residual variance (%)
-                resvar = 100 * sum((y-Xest)**2) / sum(y**2)
-                print "Residual Variance: %.2f" % (resvar)
-                self.progress.setValue(int(np.round(resvar)))
+                # add colorbar
+                divider2 = make_axes_locatable(self.axes2)
+                cax2 = divider2.append_axes("right", size="20%", pad=0.05)
+                cb = self.fig.colorbar(self.h_imshow, cax=cax2)
+                cb.ax.tick_params(labelsize=6)
+                ### CHANGE: updating colorbar doesn't seem to work
+                cb.vmin = disp_mat.min()
+                cb.vmax = disp_mat.max()                    
 
-                # plot given and estimated signal as bar graphs
-                ww = step_dat/3 # note: bars get left edge of bars
-                self.axes.bar(dat_x-ww/2,y,width=ww,color='green') # leave gaps between bars
-                self.axes.bar(dat_x+ww/2,Xest,width=ww,color='blue')
-                self.axes.xaxis.set_ticks(dat_x)
-                self.axes.tick_params(axis='both', which='major', labelsize=4)
-                self.axes.legend(["measured", "estimated"], loc=1, prop={'size': 4})
-               
-                self.axes.plot(x_ori, y_xori, linestyle='--', linewidth=0.5, c='green')
+                # Fit Regression, explain first function by other functions
+                X = ymat[1:,:].T
+                pinvX = scipy.linalg.pinv(X)
+                b = pinvX.dot(ymat[0,:].T)
+                ye = X.dot(b)
+                self.axes.plot(x,ye,c='k',linestyle='--')
 
-                self.axes.set_xlim(x_ori[0], x_ori[-1])
-                b = b  # for display
+                # plot parameter estimates
+                nb = len(b)
+                b_x = np.arange(0,nb) + .6 # start at 1, because 0 is predicted variable
+                self.h_bar = self.axes3.bar(b_x,b,.8)
+                self.axes3.set_xlim(0.3, b_x[-1]+1.2)
+                self.axes3.xaxis.set_ticks(np.arange(1,nb+1,1))
 
-                # plot some kernels
-                n = len(src_act)
-                idx = [np.ceil(n/4), np.ceil(n/2), np.ceil(0.75*n)]
-                idx = [int(ii) for ii in idx]                
-                for ii in idx:                    
-                    self.axes2.plot(x_ori,src_act[ii]/np.max(src_act[ii]),c='lightgrey',linestyle='--', linewidth=0.5)
-                    self.axes2.set_xlim(x_ori[0], x_ori[-1])
+                legend.append('Pred')
+                self.axes.legend(legend, loc=2, prop={'size': 6})
 
-                # for normalisation in plot
-                maxi = np.max( np.column_stack([my_source,b]) )
-                mini = np.min( np.column_stack([my_source/maxi,b/maxi]) )
+    def draw_correlation(self):
+        # get slider values for interactive display
+        S = []
+        for ss in self.funcsliders:
+            S.append(ss.value()/1000.)
+        S = np.array(S)
 
-                # plot parameter estimate distribution
-                self.axes2.bar(src_x,b/maxi,step_src)
+        # symmetrical x-/y-ranges
+        x = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 1
+        y = np.arange(self.x_lim[0],self.x_lim[1]+self.x_lim[2],self.x_lim[2]) # variable 2
 
-                # plot true (given) parameter distribution
-                self.axes2.plot(src_x,my_source/maxi,c='black')
+        x = x * self.slider_scale.value()/10. # scale x-axis with slider value
+        y = y * self.slider_scale.value()/10. # scale x-axis with slider value
 
-                self.axes2.set_ylim(scale_fac*-1.,scale_fac*1.1)
+        n = len(x) # for use in interactive display
 
-                x = x_ori
+        text_list = [] # text strings to evaluate as functions for scatter plots
+        for ff in self.corrtext:
+            text_list.append( '[' + unicode(ff.text()) + ']' )
+                
 
-        self.fig.tight_layout()
-        self.canvas.draw()
+        legend = []
+        zlist = [] # list of results
+        for [ti,tt] in enumerate(text_list):
+            if not(tt==[]):
+                z = np.array( eval(tt) )
+                zlist.append(y)                        
+                self.axes.scatter(z[0,], z[1,], marker='x', s=10, c=plot_colors[ti])
+                cov = np.dot(z[0,],z[1,])
+                corr = np.corrcoef(z[0,], z[1,])
+                legend.append( "%s %.2f %.2f" % (tt, corr[0,1], cov) )
 
+        min_x, max_x = np.min(z[0,]), np.max(z[0,])
+        min_y, max_y = np.min(z[1,]), np.max(z[1,])
+            
+        self.axes.set_xlim(min_x, max_x)
+        self.axes.set_ylim(min_y, max_y)                
+
+        self.axes.legend(legend, loc=2, prop={'size': 4})
+
+    def draw_invprob(self):
+        global x_global # keep track of x-values for display
+
+        self.axes2.clear()
+
+        n_src = 101 # number of sources
+        n_dat = int(np.ceil((n_src-1)/10)) # number of sensors/signals
+
+        x = self.x
+        x_ori = self.x # keep x values, variable x will be changed because of interactive functions            
+
+        # x-axis locations of "sources"
+        step_src = (x_ori[-1]-x_ori[0])/(n_src-1)
+        src_x = np.arange(x_ori[0],x[-1]+step_src,step_src)
+        n_src = src_x.shape[0]
+
+        # x-axis locations where data will be sampled
+        step_dat = (x_ori[-1]-x_ori[0])/(n_dat-1)
+        dat_x = np.arange(x[0],x[-1]+step_dat,step_dat)            
+
+        src_sig = np.zeros([n_dat,n_src]) # "leadfield", data produced by sources
+
+        # regularisation parameter, fraction of matrix traces
+        ss = self.funcsliders[0].value()
+        if ss==0:
+            regparam = 0
+        else:
+            regparam = self.funcsliders[0].value()/500.
+        print "Regularisation Parameter: %.2f" % (regparam)
+
+        # (inverse) SNR for sensor noise
+        noise_fac = self.funcsliders[1].value()
+        if noise_fac==0:
+            noise_fac = 0.
+            print "SNR (RMS): inf"
+        else:
+            noise_fac = self.funcsliders[1].value()/500.
+            print "SNR (RMS): %.2f" % (1 / noise_fac)
+
+        if hasattr(self, 'functext'):
+            legend = []
+            ylist = [] # list of results
+
+            # get slider values for use in interactive display
+            S = []
+            for ss in self.funcsliders:
+                S.append(ss.value()/1000.)
+            S = np.array(S)                
+
+            # function for source kernels
+            txt_str = unicode(self.invprobtext[0].text())
+
+            n = len(x) # for use in interactive text
+            x_global = src_x # to use box() etc.                
+
+            src_act = [] # list with source activities
+            signal = np.zeros([len(dat_x),1]) # signals at sensor points
+            for [xsi,xs] in enumerate(src_x):
+
+                for [xdi,xd] in enumerate(dat_x):
+                    x = xd - xs # distance between source and sensor
+                    x_global = x
+                    n = 1
+                    self.prec = step_src / 2 # in case box car function wanted per value
+                    src_sig[xdi,xsi] = np.array( eval(txt_str) ) # "leadfield"
+                    signal[xdi] = signal[xdi] + src_sig[xdi,xsi] # measured signal
+
+                x = x_ori - xs
+                x_global = x
+                n = len(x)
+                src_act.append( np.array( eval(txt_str) ) ) ### CHANGE: duplicates src_sig?
+
+            # fit source to given signal
+            x = src_x
+            x_global = x # to use box() etc.
+            n = len(x) # for use in interactive text
+
+            # source activity given by user
+            # function for source kernels
+            txt_str = unicode(self.invprobtext[1].text())
+            my_source = np.array( eval(txt_str) )
+
+            # given signal:
+            txt_str = unicode(self.invprobtext[1].text())
+            y = src_sig.dot(my_source) # "leadfield times sources"
+
+            # add noise with specified SNR (RMS)
+            y_rms = np.sqrt( np.mean( y**2 ))
+            noise = randn(y.shape[0])
+            noise = noise - noise.mean()
+            n_rms = np.sqrt( np.mean( noise**2 ))
+            y = y + noise_fac*(y_rms/n_rms)*noise
+          
+            # compute signal at higher sampling for display                
+            x = x_ori
+            x_global = x
+            n = len(x) # for use in interactive text
+            y_xori = np.array( eval(txt_str) )
+
+            X = src_sig # source activities as columns
+            # Tikhonov on foot:
+            Xgram = X.dot(X.T)
+            Xgramtrace = np.trace(Xgram)
+            Xreg = np.eye(Xgram.shape[0]) * (Xgramtrace/n_dat) * regparam # identity matrix adjusted trace
+            Xreginv = scipy.linalg.pinv(Xgram+Xreg)
+            pinvX = X.T.dot(Xreginv)
+            
+            b = pinvX.dot(y) # parameter estimates
+
+            Xest = X.dot(b) # estimated signal
+
+            # residual variance (%)
+            resvar = 100 * sum((y-Xest)**2) / sum(y**2)
+            print "Residual Variance: %.2f" % (resvar)
+            self.progress.setValue(int(np.round(resvar)))
+
+            # plot given and estimated signal as bar graphs
+            ww = step_dat/3 # note: bars get left edge of bars
+            self.axes.bar(dat_x-ww/2,y,width=ww,color='green') # leave gaps between bars
+            self.axes.bar(dat_x+ww/2,Xest,width=ww,color='blue')
+            self.axes.xaxis.set_ticks(dat_x)
+            self.axes.tick_params(axis='both', which='major', labelsize=4)
+            self.axes.legend(["measured", "estimated"], loc=1, prop={'size': 4})
+           
+            self.axes.plot(x_ori, y_xori, linestyle='--', linewidth=0.5, c='green')
+
+            self.axes.set_xlim(x_ori[0], x_ori[-1])
+            b = b  # for display
+
+            # plot some kernels
+            n = len(src_act)
+            idx = [np.ceil(n/4), np.ceil(n/2), np.ceil(0.75*n)]
+            idx = [int(ii) for ii in idx]                
+            for ii in idx:                    
+                self.axes2.plot(x_ori,src_act[ii]/np.max(src_act[ii]),c='lightgrey',linestyle='--', linewidth=0.5)
+                self.axes2.set_xlim(x_ori[0], x_ori[-1])
+
+            # for normalisation in plot
+            maxi = np.max( np.column_stack([my_source,b]) )
+            mini = np.min( np.column_stack([my_source/maxi,b/maxi]) )
+
+            # plot parameter estimate distribution
+            self.axes2.bar(src_x,b/maxi,step_src)
+
+            # plot true (given) parameter distribution
+            self.axes2.plot(src_x,my_source/maxi,c='black')
+
+            self.axes2.set_ylim(self.scale_fac*-1.,self.scale_fac*1.1)
+
+            x = x_ori
 
 
     def on_add_func(self):
@@ -606,47 +597,17 @@ class AppForm(QMainWindow):
         self.canvas.setFocus()
 
         attr_list = [] # attribute list for hbox widgets
-
-                
-        # Since we have only one plot, we can use add_axes 
-        # instead of add_subplot, but then the subplot
-        # configuration tool in the navigation toolbar wouldn't
-        # work.
-        #
+        
+        ## create figure axes for plots
+        # display vectors or correlation
         if self.display_option==0 or self.display_option==2:
-            self.axes = self.fig.add_subplot(111)
-            self.axes.set_xlim([-1., 1.])
-            self.axes.set_ylim([-1., 1.])
-            self.axes.grid(True, 'major')
-            self.axes.tick_params(axis='both', which='major', labelsize=6)            
+            self.axes_vectors()
 
         elif self.display_option==1: # only for regression
-            self.axes = self.fig.add_subplot(211)
-            self.axes.set_xlim([-1, 1])
-            self.axes.set_ylim([-1, 1])
-            self.axes.grid(True, 'major')
-            self.axes.tick_params(axis='both', which='major', labelsize=6)
-
-            self.axes2 = self.fig.add_subplot(223)
-            # self.axes2.grid(True, 'major')
-            self.axes2.tick_params(axis='both', which='major', labelsize=6)
-
-            self.axes3 = self.fig.add_subplot(224)
-            self.axes3.grid(True, 'major')
-            self.axes3.tick_params(axis='both', which='major', labelsize=6)
-            self.axes3.set_title("Estimates", {'fontsize': 6})
+            self.axes_regression()
 
         elif self.display_option==3: # for underdetermined inverse problem
-            self.axes = self.fig.add_subplot(211)
-            self.axes.set_xlim([-1, 1])
-            self.axes.set_ylim([-1., 1.])
-            self.axes.grid(True, 'major')
-            self.axes.tick_params(axis='both', which='major', labelsize=6)
-
-            self.axes2 = self.fig.add_subplot(212)
-            self.axes2.set_xlim([-1, 1])
-            self.axes2.set_ylim([-1.05, 1.05])
-            self.axes2.tick_params(axis='both', which='major', labelsize=6)
+            self.axes_invprob()
         
         # Create the navigation toolbar, tied to the canvas
         #
@@ -660,10 +621,7 @@ class AppForm(QMainWindow):
 
         ## Text for x-axis limits (min, max, step)
         if not(hasattr(self, 'textbox_lim')):
-            self.textbox_lim = QLineEdit()
-            self.textbox_lim.setText('-1 1 0.01')
-            self.textbox_lim.setMinimumWidth(200)
-            self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)
+            self.add_textbox_lim()            
         attr_list.append(self.textbox_lim)
         
         self.draw_button = QPushButton("&Draw")
@@ -680,43 +638,21 @@ class AppForm(QMainWindow):
 
         # Menu box for display options (vectors. regression, correlation)
         if not(hasattr(self, 'comboBox')):
-            self.comboBox = QComboBox(self)
-            self.comboBox.addItem("Vectors")
-            self.comboBox.addItem("Regression")
-            self.comboBox.addItem("Correlation")
-            self.comboBox.addItem("Inverse Problem")
-
-            self.comboBox.activated[str].connect(self.display_method)
+            self.add_comboBox_disp()            
         attr_list.append(self.comboBox)
 
         # menu for correlation/covariance display in regression
         if not(hasattr(self, 'corrBox')):
-            self.corrBox = QComboBox(self)
-            self.corrBox.addItem("Disp Corr")
-            self.corrBox.addItem("Disp Cov")
-            self.display_covcorr = 0 # Default: Correlation
-
-            self.corrBox.activated[str].connect(self.covcorr)
-
+            self.add_comboBox_corr()
         attr_list.append(self.corrBox)
 
         ## Slider
         if not(hasattr(self, 'slider_scale')):
-            self.slider_label = QLabel('Scaling:')
-            self.slider_scale = QSlider(Qt.Horizontal)
-            self.slider_scale.setRange(1, 1000)
-            self.slider_scale.setValue(500)
-            self.slider_scale.setTracking(True)
-            # self.slider_scale.setTickPosition(QSlider.TicksBothSides)
-            self.slider_scale.setTickPosition(QSlider.TicksBelow)
-            self.slider_scale.setTickInterval(50)
-            self.connect(self.slider_scale, SIGNAL('valueChanged(int)'), self.on_draw)
-        
+            self.add_sliders()        
         attr_list.append(self.slider_label)
         attr_list.append(self.slider_scale)
             
         # Create layout within canvas
-
         hbox1 = QHBoxLayout()   # buttons, sliders, etc.
         hbox2 = QHBoxLayout()  # text boxes for regression
         hbox3 = QHBoxLayout()  # sliders for noise in regression
@@ -732,17 +668,9 @@ class AppForm(QMainWindow):
         
         # REGRESSION text and slider boxes        
         if not(hasattr(self, 'functext')):
-            self.funclabel = QLabel('Regr:') # for box with regression functions
+            self.add_functext()            
 
-            self.funclabels = []            
-            self.funclabels.append(QLabel('0:'))
-
-            self.functext = []
-            self.functext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
-            self.functext[0].setMinimumWidth(200)
-            self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)        
-
-        # add function text boxes to box
+        # add function text boxes and labels to box
         hbox2.addWidget(self.funclabel)
         for aa in range(len(self.functext)):
             w = self.funclabels[aa]
@@ -755,31 +683,8 @@ class AppForm(QMainWindow):
             
         # for regression and inverse problem, add two sliders
         if not(hasattr(self, 'funcsliders')):
-            # regression sliders
-            self.fslidelabels = []
-            self.fslidelabels.append(QLabel('0:'))
-
-            self.funcsliders = []
-            self.funcsliders.append(QSlider(Qt.Horizontal))
-            self.funcsliders[0].setRange(0, 1000)
-            self.funcsliders[0].setMinimumWidth(500)
-            self.funcsliders[0].setValue(0)
-            self.funcsliders[0].setTracking(True)
-            self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
-            self.funcsliders[0].setTickInterval(50)
-            self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
-
-            self.fslidelabels.append(QLabel('1:'))
-
-            self.funcsliders.append(QSlider(Qt.Horizontal))
-            self.funcsliders[1].setRange(0, 1000)
-            self.funcsliders[1].setMinimumWidth(500)
-            self.funcsliders[1].setValue(0)
-            self.funcsliders[1].setTracking(True)
-            self.funcsliders[1].setTickPosition(QSlider.TicksBelow)
-            self.funcsliders[1].setTickInterval(50)
-            self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
-        
+            self.add_funcsliders()
+                    
         # add function sliders to box
         for aa in range(len(self.fslidelabels)):
             w = self.fslidelabels[aa]
@@ -796,17 +701,10 @@ class AppForm(QMainWindow):
 
         # CORRELATION text box        
         if not(hasattr(self, 'corrtext')):
-            self.corrlabel = QLabel('Corr:') # for box with regression functions
-
-            self.corrlabels = []
-            self.corrlabels.append(QLabel('0:'))
-
-            self.corrtext = []
-            self.corrtext.append(QLineEdit()) # textbox for functions to be executed
-            self.corrtext[0].setMinimumWidth(200)            
-            self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)
+            self.add_textbox_corr()
+            
     
-        # add correlation text boxes to box
+        # add correlation text boxes and labels to box
         hbox4.addWidget(self.corrlabel)
         for aa in range(len(self.corrtext)):
             w = self.corrlabels[aa]
@@ -819,25 +717,8 @@ class AppForm(QMainWindow):
 
         # INVERSE PROBLEM text boxes
         if not(hasattr(self, 'invprobtext')):
-            self.invproblabel = QLabel('Inv Prob:') # for box with regression functions
-
-            self.invproblabels = []
-            self.invproblabels.append(QLabel('Kern:'))
-
-            self.invprobtext = []
-            # add two text boxes for source activity and signal to be fitted
-            self.invprobtext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
-            self.invprobtext[0].setMinimumWidth(200)
-            self.connect(self.invprobtext[0], SIGNAL('editingFinished ()'), self.on_draw)
-
-            self.invproblabels.append(QLabel('Src:'))
-            self.invprobtext.append(QLineEdit("box(-0.5,0)+box(0.5,0)")) # textbox for functions to be executed
-            self.invprobtext[1].setMinimumWidth(200)
-            self.connect(self.invprobtext[1], SIGNAL('editingFinished ()'), self.on_draw)
-
-            self.proglabel = QLabel('RV:') # progress bar for residual variance
-            self.progress = QProgressBar(self)
-            self.progress.setGeometry(200, 80, 250, 20)
+            self.add_textbox_invprob()
+            
 
         # add function text boxes to box
         hbox5.addWidget(self.invproblabel)
@@ -868,47 +749,143 @@ class AppForm(QMainWindow):
         self.main_frame.setLayout(vbox)
         self.setCentralWidget(self.main_frame)
         
-        # self.grid_cb = QCheckBox("Show &Grid")
-        # self.grid_cb.setChecked(False)
-        # self.connect(self.grid_cb, SIGNAL('stateChanged(int)'), self.on_draw)
-        
-        
-        
-        #
-        # Layout with box sizers
-        #         
-
-        ## NEW (use cursor position)        
-        # self.connect(self.canvas, SIGNAL('clicked()'), self.curs_pos)
     
-    # def create_status_bar(self):
-    #     self.status_text = QLabel("This is a demo")
-    #     self.statusBar().addWidget(self.status_text, 1)
-        
-    # def create_menu(self):
-    #     self.options_menu = self.menuBar().addMenu("&Options")
-        
-    #     # load_file_action = self.create_action("&Save plot",
-    #     #     shortcut="Ctrl+S", slot=self.save_plot, 
-    #     #     tip="Save the plot")
-    #     # quit_action = self.create_action("&Quit", slot=self.close, 
-    #     #     shortcut="Ctrl+Q", tip="Close the application")
+    ### Functions for MAINFRAME
+    def axes_vectors(self):
+        self.axes = self.fig.add_subplot(111)
+        self.axes.set_xlim([-1., 1.])
+        self.axes.set_ylim([-1., 1.])
+        self.axes.grid(True, 'major')
+        self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-    #     regress_action = QAction("&Regression", self)
-        
-    #     self.connect(regress_action, SIGNAL("triggered()"), self.do_regression)
+    def axes_regression(self):
+        self.axes = self.fig.add_subplot(211)
+        self.axes.set_xlim([-1, 1])
+        self.axes.set_ylim([-1, 1])
+        self.axes.grid(True, 'major')
+        self.axes.tick_params(axis='both', which='major', labelsize=6)
 
-    #     self.options_menu.addAction(regress_action)
-        
-    #     # self.add_actions(self.file_menu, 
-    #     #     [load_file_action])
-        
-    #     # self.help_menu = self.menuBar().addMenu("&Help")
-    #     # about_action = self.create_action("&About", 
-    #     #     shortcut='F1', slot=self.on_about, 
-    #     #     tip='About the demo')
-        
-    #     # self.add_actions(self.help_menu, (about_action,))
+        self.axes2 = self.fig.add_subplot(223)
+        # self.axes2.grid(True, 'major')
+        self.axes2.tick_params(axis='both', which='major', labelsize=6)
+
+        self.axes3 = self.fig.add_subplot(224)
+        self.axes3.grid(True, 'major')
+        self.axes3.tick_params(axis='both', which='major', labelsize=6)
+        self.axes3.set_title("Estimates", {'fontsize': 6})
+
+    def axes_invprob(self):
+        self.axes = self.fig.add_subplot(211)
+        self.axes.set_xlim([-1, 1])
+        self.axes.set_ylim([-1., 1.])
+        self.axes.grid(True, 'major')
+        self.axes.tick_params(axis='both', which='major', labelsize=6)
+
+        self.axes2 = self.fig.add_subplot(212)
+        self.axes2.set_xlim([-1, 1])
+        self.axes2.set_ylim([-1.05, 1.05])
+        self.axes2.tick_params(axis='both', which='major', labelsize=6)
+
+    def add_textbox_lim(self):
+        self.textbox_lim = QLineEdit()
+        self.textbox_lim.setText('-1 1 0.01')
+        self.textbox_lim.setMinimumWidth(200)
+        self.connect(self.textbox_lim, SIGNAL('editingFinished ()'), self.on_draw)
+
+    def add_comboBox_disp(self):
+        self.comboBox = QComboBox(self)
+        self.comboBox.addItem("Vectors")
+        self.comboBox.addItem("Regression")
+        self.comboBox.addItem("Correlation")
+        self.comboBox.addItem("Inverse Problem")
+        self.comboBox.activated[str].connect(self.display_method)
+
+    def add_comboBox_corr(self):
+        self.corrBox = QComboBox(self)
+        self.corrBox.addItem("Disp Corr")
+        self.corrBox.addItem("Disp Cov")
+        self.display_covcorr = 0 # Default: Correlation
+        self.corrBox.activated[str].connect(self.covcorr)
+
+    def add_sliders(self):
+        self.slider_label = QLabel('Scaling:')
+        self.slider_scale = QSlider(Qt.Horizontal)
+        self.slider_scale.setRange(1, 1000)
+        self.slider_scale.setValue(500)
+        self.slider_scale.setTracking(True)
+        # self.slider_scale.setTickPosition(QSlider.TicksBothSides)
+        self.slider_scale.setTickPosition(QSlider.TicksBelow)
+        self.slider_scale.setTickInterval(50)
+        self.connect(self.slider_scale, SIGNAL('valueChanged(int)'), self.on_draw)
+
+    def add_functext(self):
+        self.funclabel = QLabel('Regr:') # for box with regression functions
+        self.funclabels = []            
+        self.funclabels.append(QLabel('0:'))
+        self.functext = []
+        self.functext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
+        self.functext[0].setMinimumWidth(200)
+        self.connect(self.functext[0], SIGNAL('editingFinished ()'), self.on_draw)
+        self.funclabels.append(QLabel('0:'))
+        self.functext.append(QLineEdit("np.exp(-(10*x)**2)")) # textbox for functions to be executed
+        self.functext[1].setMinimumWidth(200)
+        self.connect(self.functext[1], SIGNAL('editingFinished ()'), self.on_draw)
+
+    def add_funcsliders(self):
+        # regression sliders
+        self.fslidelabels = []
+        self.fslidelabels.append(QLabel('0:'))
+
+        self.funcsliders = []
+        self.funcsliders.append(QSlider(Qt.Horizontal))
+        self.funcsliders[0].setRange(0, 1000)
+        self.funcsliders[0].setMinimumWidth(500)
+        self.funcsliders[0].setValue(0)
+        self.funcsliders[0].setTracking(True)
+        self.funcsliders[0].setTickPosition(QSlider.TicksBelow)
+        self.funcsliders[0].setTickInterval(50)
+        self.connect(self.funcsliders[0], SIGNAL('valueChanged(int)'), self.on_draw)
+
+        self.fslidelabels.append(QLabel('1:'))
+
+        self.funcsliders.append(QSlider(Qt.Horizontal))
+        self.funcsliders[1].setRange(0, 1000)
+        self.funcsliders[1].setMinimumWidth(500)
+        self.funcsliders[1].setValue(0)
+        self.funcsliders[1].setTracking(True)
+        self.funcsliders[1].setTickPosition(QSlider.TicksBelow)
+        self.funcsliders[1].setTickInterval(50)
+        self.connect(self.funcsliders[1], SIGNAL('valueChanged(int)'), self.on_draw)
+
+    def add_textbox_corr(self):
+        self.corrlabel = QLabel('Corr:') # for box with regression functions
+        self.corrlabels = []
+        self.corrlabels.append(QLabel('0:'))
+        self.corrtext = []
+        self.corrtext.append(QLineEdit("x,y")) # textbox for functions to be executed
+        self.corrtext[0].setMinimumWidth(200)            
+        self.connect(self.corrtext[0], SIGNAL('editingFinished ()'), self.on_draw)
+
+    def add_textbox_invprob(self):
+        self.invproblabel = QLabel('Inv Prob:') # for box with regression functions
+        self.invproblabels = []
+        self.invproblabels.append(QLabel('Kern:'))
+
+        self.invprobtext = []
+        # add two text boxes for source activity and signal to be fitted
+        self.invprobtext.append(QLineEdit("np.exp(-(6*x)**2)")) # textbox for functions to be executed
+        self.invprobtext[0].setMinimumWidth(200)
+        self.connect(self.invprobtext[0], SIGNAL('editingFinished ()'), self.on_draw)
+
+        self.invproblabels.append(QLabel('Src:'))
+        self.invprobtext.append(QLineEdit("box(-0.5,0)+box(0.5,0)")) # textbox for functions to be executed
+        self.invprobtext[1].setMinimumWidth(200)
+        self.connect(self.invprobtext[1], SIGNAL('editingFinished ()'), self.on_draw)
+
+        self.proglabel = QLabel('RV:') # progress bar for residual variance
+        self.progress = QProgressBar(self)
+        self.progress.setGeometry(200, 80, 250, 20)
+
 
     def add_actions(self, target, actions):
         for action in actions:
@@ -946,3 +923,35 @@ def main():
 
 if __name__ == "__main__":
     form = main()
+
+
+### left over stuff:
+
+# def create_status_bar(self):
+    #     self.status_text = QLabel("This is a demo")
+    #     self.statusBar().addWidget(self.status_text, 1)
+        
+    # def create_menu(self):
+    #     self.options_menu = self.menuBar().addMenu("&Options")
+        
+    #     # load_file_action = self.create_action("&Save plot",
+    #     #     shortcut="Ctrl+S", slot=self.save_plot, 
+    #     #     tip="Save the plot")
+    #     # quit_action = self.create_action("&Quit", slot=self.close, 
+    #     #     shortcut="Ctrl+Q", tip="Close the application")
+
+    #     regress_action = QAction("&Regression", self)
+        
+    #     self.connect(regress_action, SIGNAL("triggered()"), self.do_regression)
+
+    #     self.options_menu.addAction(regress_action)
+        
+    #     # self.add_actions(self.file_menu, 
+    #     #     [load_file_action])
+        
+    #     # self.help_menu = self.menuBar().addMenu("&Help")
+    #     # about_action = self.create_action("&About", 
+    #     #     shortcut='F1', slot=self.on_about, 
+    #     #     tip='About the demo')
+        
+    #     # self.add_actions(self.help_menu, (about_action,))
