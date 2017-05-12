@@ -361,6 +361,11 @@ class AppForm(QMainWindow):
     def draw_invprob(self):
         global x_global # keep track of x-values for display
 
+        # keep text in textboxes, in case applications are switched
+        self.invprobtext_keep = []
+        for tt in self.invprobtext:
+            self.invprobtext_keep.append(unicode(tt.text()))
+
         self.axes2.clear()
 
         n_src = 101 # number of sources
@@ -657,7 +662,8 @@ class AppForm(QMainWindow):
         hbox2 = QHBoxLayout()  # text boxes for regression
         hbox3 = QHBoxLayout()  # sliders for noise in regression
         hbox4 = QHBoxLayout()  # text boxes for correlation
-        hbox5 = QHBoxLayout()  # text boxes for inverse problem
+        if self.display_option==3:
+            hbox5 = QHBoxLayout()  # text boxes for inverse problem
 
         # HBOX1 for Draw/Add buttons etc.
         for w in attr_list:
@@ -714,25 +720,6 @@ class AppForm(QMainWindow):
             hbox4.addWidget(w)
             hbox4.setAlignment(w, Qt.AlignVCenter)
 
-
-        # INVERSE PROBLEM text boxes
-        if not(hasattr(self, 'invprobtext')):
-            self.add_textbox_invprob()
-            
-
-        # add function text boxes to box
-        hbox5.addWidget(self.invproblabel)
-        for aa in range(len(self.invprobtext)):
-            w = self.invproblabels[aa]
-            hbox5.addWidget(w)
-
-            w = self.invprobtext[aa]
-            hbox5.addWidget(w)
-            hbox5.setAlignment(w, Qt.AlignVCenter)
-        
-        hbox5.addWidget(self.proglabel)
-        hbox5.addWidget(self.progress)
-
                 
         vbox = QVBoxLayout()
         vbox.addWidget(self.canvas)
@@ -744,7 +731,25 @@ class AppForm(QMainWindow):
         vbox.addLayout(hbox2)
         vbox.addLayout(hbox3)
         vbox.addLayout(hbox4)
-        vbox.addLayout(hbox5)
+
+        # add function text boxes to box
+        if self.display_option==3:
+            # INVERSE PROBLEM text boxes
+            self.add_textbox_invprob()
+
+            hbox5.addWidget(self.invproblabel)
+            for aa in range(len(self.invprobtext)):
+                w = self.invproblabels[aa]
+                hbox5.addWidget(w)
+
+                w = self.invprobtext[aa]
+                hbox5.addWidget(w)
+                hbox5.setAlignment(w, Qt.AlignVCenter)
+            
+            hbox5.addWidget(self.proglabel)
+            hbox5.addWidget(self.progress)
+
+            vbox.addLayout(hbox5)
         
         self.main_frame.setLayout(vbox)
         self.setCentralWidget(self.main_frame)
@@ -885,6 +890,10 @@ class AppForm(QMainWindow):
         self.proglabel = QLabel('RV:') # progress bar for residual variance
         self.progress = QProgressBar(self)
         self.progress.setGeometry(200, 80, 250, 20)
+        
+        if hasattr(self,"invprobtext_keep"): # if already text in textboxes, keep it
+            self.invprobtext[0].setText(self.invprobtext_keep[0]) 
+            self.invprobtext[1].setText(self.invprobtext_keep[1])
 
 
     def add_actions(self, target, actions):
